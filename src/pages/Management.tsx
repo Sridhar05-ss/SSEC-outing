@@ -17,12 +17,17 @@ const demoStaffLogs = [
   { id: "S001", name: "Dr. Rajesh Kumar", dept: "CSE", in: "2024-06-01 08:10", out: "2024-06-01 16:30" },
   { id: "S002", name: "Anita Singh", dept: "ECE", in: "2024-06-01 08:15", out: "2024-06-01 16:00" },
 ];
+const demoVisitors = [
+  { name: "Visitor One", mobile: "9876543210", reason: "Meeting", timestamp: "2024-06-01 10:30" },
+  { name: "Visitor Two", mobile: "9123456780", reason: "Delivery", timestamp: "2024-06-01 11:15" },
+];
 
 function Sidebar({ active, setActive }) {
   const navItems = [
     { key: "all", label: "All Logs" },
     { key: "student", label: "Student Logs" },
     { key: "staff", label: "Staff Logs" },
+    { key: "visitors", label: "Visitors Details" },
   ];
   return (
     <aside className="min-h-screen w-64 bg-gradient-to-b from-blue-700 to-blue-400 text-white flex flex-col py-8 px-4 shadow-2xl print:hidden">
@@ -206,6 +211,77 @@ function StaffLogsTable({ logs }) {
   );
 }
 
+function VisitorsTable({ visitors }) {
+  return (
+    <div className="w-[95%] mx-auto bg-white rounded-2xl shadow-lg p-4 overflow-y-auto max-h-[70vh] print:p-0 print:shadow-none print:bg-white">
+      <table className="w-full text-left rounded text-sm table-fixed">
+        <thead>
+          <tr className="bg-blue-600 text-white text-center">
+            <th className="py-3 px-6">Name</th>
+            <th className="py-3 px-6">Mobile Number</th>
+            <th className="py-3 px-6">Reason of Visit</th>
+            <th className="py-3 px-6">Timestamp</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visitors.length === 0 ? (
+            <tr><td colSpan={4} className="py-6 text-center text-blue-700">No visitors found.</td></tr>
+          ) : (
+            visitors.map((v, i) => (
+              <tr key={i} className={i % 2 === 0 ? "bg-blue-50 transition-all hover:bg-blue-100" : "bg-white transition-all hover:bg-blue-50"}>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{v.name}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[10rem]">{v.mobile}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[16rem]">{v.reason}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{v.timestamp}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function VisitorsSearchBar({ search, setSearch, date, setDate, onClear, onPrint, onDownloadPDF }) {
+  return (
+    <div className="flex flex-col md:flex-row gap-4 items-center mb-6">
+      <div className="relative w-full md:w-1/2">
+        <input
+          className="rounded-md border border-gray-300 px-8 py-2 text-sm focus:ring-blue-500 w-full bg-white/80 placeholder:text-gray-400"
+          placeholder="Search by Name or Mobile..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-blue-400">🔍</span>
+      </div>
+      <div className="flex items-center gap-2 w-full md:w-auto">
+        <label className="text-blue-700 font-medium">Date:</label>
+        <input
+          type="date"
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:ring-blue-500 bg-white/80"
+          value={date}
+          onChange={e => setDate(e.target.value)}
+        />
+      </div>
+      <button
+        className="bg-gray-200 hover:bg-gray-300 text-sm px-4 py-1 rounded font-medium transition print:hidden"
+        onClick={onClear}
+        type="button"
+      >Clear Filters</button>
+      <button
+        className="bg-blue-600 hover:bg-blue-700 text-white rounded shadow px-4 py-2 font-semibold transition-all duration-150 active:scale-95 print:hidden"
+        onClick={onPrint}
+        type="button"
+      >Print</button>
+      <button
+        className="bg-green-600 hover:bg-green-700 text-white rounded shadow px-4 py-2 font-semibold transition-all duration-150 active:scale-95 print:hidden"
+        onClick={onDownloadPDF}
+        type="button"
+      >Download as PDF</button>
+    </div>
+  );
+}
+
 export default function Management() {
   const [active, setActive] = useState("all");
   const [search, setSearch] = useState("");
@@ -253,6 +329,36 @@ export default function Management() {
     pdf.save(`${logType}_${dateStr}.pdf`);
   };
 
+  const [visitorsSearch, setVisitorsSearch] = useState("");
+  const [visitorsDate, setVisitorsDate] = useState("");
+  const visitorsRef = useRef(null);
+  const filterVisitors = (visitors) => {
+    return visitors.filter(v =>
+      (!visitorsSearch || v.name.toLowerCase().includes(visitorsSearch.toLowerCase()) || v.mobile.includes(visitorsSearch)) &&
+      (!visitorsDate || (v.timestamp && v.timestamp.startsWith(visitorsDate)))
+    );
+  };
+  const handleVisitorsPrint = () => { window.print(); };
+  const handleVisitorsDownloadPDF = async () => {
+    // @ts-ignore
+    const jsPDF = (await import("jspdf")).jsPDF;
+    // @ts-ignore
+    const html2canvas = (await import("html2canvas")).default;
+    const table = visitorsRef.current;
+    if (!table) return;
+    const canvas = await html2canvas(table, { scale: 2 });
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF({ orientation: "landscape" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const imgProps = pdf.getImageProperties(imgData);
+    const pdfWidth = pageWidth;
+    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+    pdf.addImage(imgData, "PNG", 0, 10, pdfWidth, pdfHeight);
+    const today = new Date();
+    const dateStr = today.toLocaleDateString("en-GB").replace(/\//g, "-");
+    pdf.save(`Visitors_${dateStr}.pdf`);
+  };
+
   let TableComponent = null;
   let logs = [];
   if (active === "all") {
@@ -264,6 +370,23 @@ export default function Management() {
   } else if (active === "staff") {
     TableComponent = StaffLogsTable;
     logs = filterLogs(demoStaffLogs);
+  } else if (active === "visitors") {
+    TableComponent = () => (
+      <>
+        <VisitorsSearchBar
+          search={visitorsSearch}
+          setSearch={setVisitorsSearch}
+          date={visitorsDate}
+          setDate={setVisitorsDate}
+          onClear={() => { setVisitorsSearch(""); setVisitorsDate(""); }}
+          onPrint={handleVisitorsPrint}
+          onDownloadPDF={handleVisitorsDownloadPDF}
+        />
+        <div ref={visitorsRef} className="print:bg-white">
+          <VisitorsTable visitors={filterVisitors(demoVisitors)} />
+        </div>
+      </>
+    );
   }
 
   return (
@@ -275,15 +398,39 @@ export default function Management() {
         </header>
         <main className="flex-1 p-8 bg-blue-50 overflow-y-auto flex flex-col gap-8 items-center">
           <div className="w-full">
-            <SearchBar
-              search={search}
-              setSearch={setSearch}
-              date={date}
-              setDate={setDate}
-              onClear={handleClearFilters}
-              onPrint={handlePrint}
-              onDownloadPDF={handleDownloadPDF}
-            />
+            {active === "all" && (
+              <SearchBar
+                search={search}
+                setSearch={setSearch}
+                date={date}
+                setDate={setDate}
+                onClear={handleClearFilters}
+                onPrint={handlePrint}
+                onDownloadPDF={handleDownloadPDF}
+              />
+            )}
+            {active === "staff" && (
+              <SearchBar
+                search={search}
+                setSearch={setSearch}
+                date={date}
+                setDate={setDate}
+                onClear={handleClearFilters}
+                onPrint={handlePrint}
+                onDownloadPDF={handleDownloadPDF}
+              />
+            )}
+            {active === "student" && (
+              <SearchBar
+                search={search}
+                setSearch={setSearch}
+                date={date}
+                setDate={setDate}
+                onClear={handleClearFilters}
+                onPrint={handlePrint}
+                onDownloadPDF={handleDownloadPDF}
+              />
+            )}
             <div ref={tableRef} className="print:bg-white">
               <TableComponent logs={logs} />
             </div>
