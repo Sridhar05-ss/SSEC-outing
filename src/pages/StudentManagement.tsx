@@ -1,235 +1,143 @@
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { 
-  GraduationCap, 
-  Plus, 
-  Search, 
-  Camera, 
-  Edit, 
-  Trash2,
-  Users,
-  Filter
-} from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import React, { useState, useRef } from "react";
+import { db } from "../lib/firebase";
+import { ref, set, remove } from "firebase/database";
 
-interface Student {
-  id: string;
-  name: string;
-  rollNo: string;
-  year: string;
-  department: string;
-  dob: string;
-  hasFaceData: boolean;
-  lastSeen?: string;
-}
+const departments = [
+  "CSE", "ECE", "MECH", "CIVIL", "IT", "AIML", "CYBER SECURITY", "AIDS", "EEE", "DCSE", "DECE", "DMECH"
+];
 
-const StudentManagement = () => {
-  const { toast } = useToast();
-  const [searchTerm, setSearchTerm] = useState("");
-  
-  // Mock student data
-  const [studentList] = useState<Student[]>([
-    {
-      id: "1",
-      name: "Priya Sharma",
-      rollNo: "20CS101",
-      year: "4th Year",
-      department: "Computer Science",
-      dob: "2002-03-15",
-      hasFaceData: true,
-      lastSeen: "5 minutes ago"
-    },
-    {
-      id: "2",
-      name: "Rahul Patel",
-      rollNo: "20EC205",
-      year: "4th Year",
-      department: "Electronics",
-      dob: "2002-07-22",
-      hasFaceData: true,
-      lastSeen: "12 minutes ago"
-    },
-    {
-      id: "3",
-      name: "Aisha Khan",
-      rollNo: "21CS067",
-      year: "3rd Year",
-      department: "Computer Science",
-      dob: "2003-01-10",
-      hasFaceData: false,
-      lastSeen: "Never"
-    },
-    {
-      id: "4",
-      name: "Vikash Singh",
-      rollNo: "21ME134",
-      year: "3rd Year",
-      department: "Mechanical",
-      dob: "2003-05-08",
-      hasFaceData: true,
-      lastSeen: "2 hours ago"
-    }
-  ]);
+const StudentManagement: React.FC = () => {
+  const [name, setName] = useState("");
+  const [register, setRegister] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [parentPhone, setParentPhone] = useState("");
+  const [department, setDepartment] = useState(departments[0]);
+  const [dob, setDob] = useState("");
+  const [hostel, setHostel] = useState("Hosteller");
+  const [removeId, setRemoveId] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const handleCaptureFace = (student: Student) => {
-    toast({
-      title: "Face Capture Initiated",
-      description: `Starting face capture for ${student.name}. Please position yourself in front of the camera.`,
-    });
+  // Camera modal state
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState("");
+
+  const openCamera = (studentId: string) => {
+    setCameraOpen(true);
+    setCameraError("");
+    navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
+      setStream(s);
+      if (videoRef.current) {
+        videoRef.current.srcObject = s;
+        videoRef.current.play();
+      }
+    }).catch(() => setCameraError("Camera not available or permission denied."));
   };
 
-  const filteredStudents = studentList.filter(student =>
-    student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.rollNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.department.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const closeCamera = () => {
+    setCameraOpen(false);
+    if (stream) stream.getTracks().forEach(track => track.stop());
+  };
+
+  const captureFace = async () => {
+    if (videoRef.current && canvasRef.current && studentId && department) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+        const dataUrl = canvasRef.current.toDataURL('image/png');
+        // Save to Firebase
+        await set(ref(db, `students/${department}/${studentId}/face`), dataUrl);
+        alert('Face captured and saved!');
+        closeCamera();
+      }
+    }
+  };
+
+  const handleAddStudent = async () => {
+    if (!studentId || !name || !register || !parentPhone || !department) {
+      alert("Please fill all fields.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await set(ref(db, `students/${department}/${studentId}`), {
+        username: studentId,
+        Name: name,
+        department,
+        registernumber: register,
+        parentphone: parentPhone,
+        mode: hostel,
+        password: dob,
+        role: "student",
+        captureStatus: "Not Captured"
+      });
+      alert("Student added successfully!");
+      setName(""); setRegister(""); setStudentId(""); setParentPhone(""); setDepartment(departments[0]); setDob(""); setHostel("Hosteller");
+    } catch (err) {
+      alert("Failed to add student.");
+    }
+    setLoading(false);
+  };
+
+  const handleRemoveStudent = async () => {
+    if (!removeId || !department) {
+      alert("Enter Student ID and Department to remove.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await remove(ref(db, `students/${department}/${removeId}`));
+      alert("Student removed successfully!");
+      setRemoveId("");
+    } catch (err) {
+      alert("Failed to remove student.");
+    }
+    setLoading(false);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">Student Management</h1>
-          <p className="text-muted-foreground">Manage student profiles and face recognition data</p>
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh' }}>
+      <div style={{ background: 'white', borderRadius: 24, boxShadow: '0 8px 32px #0001', padding: 40, width: 500, maxWidth: '95%' }}>
+        <h2 style={{ color: '#1848c1', fontWeight: 700, fontSize: 22, marginBottom: 24 }}>Add Student</h2>
+        <form style={{ display: 'flex', flexDirection: 'column', gap: 16 }} onSubmit={e => { e.preventDefault(); handleAddStudent(); }}>
+          <input placeholder="Student Name" value={name} onChange={e => setName(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
+          <input placeholder="Register Number" value={register} onChange={e => setRegister(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
+          <input placeholder="Student ID" value={studentId} onChange={e => setStudentId(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
+          <input placeholder="Parent's Phone Number" value={parentPhone} onChange={e => setParentPhone(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
+          <select value={department} onChange={e => setDepartment(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }}>
+            {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
+          </select>
+          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+            <button type="button" onClick={() => openCamera(studentId)} style={{ flex: 1, background: '#e0e7ff', color: '#2563eb', border: '1px solid #2563eb', borderRadius: 6, padding: '10px 0', fontWeight: 500, cursor: 'pointer' }}>📷 Capture Face</button>
+            <button type="submit" disabled={loading} style={{ flex: 1, background: '#2563eb', color: 'white', border: 'none', borderRadius: 6, padding: '10px 0', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>Add Student</button>
         </div>
-        <Button variant="hero" size="lg">
-          <Plus className="h-4 w-4" />
-          Add New Student
-        </Button>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="shadow-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <GraduationCap className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-2xl font-bold text-primary">3,421</p>
-                <p className="text-sm text-muted-foreground">Total Students</p>
+        </form>
+        <h3 style={{ color: '#1848c1', fontWeight: 700, fontSize: 18, margin: '32px 0 12px' }}>Remove Student</h3>
+        <form style={{ display: 'flex', flexDirection: 'column', gap: 12 }} onSubmit={e => { e.preventDefault(); handleRemoveStudent(); }}>
+          <input placeholder="Student ID" value={removeId} onChange={e => setRemoveId(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
+          <button type="submit" disabled={loading} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: 6, padding: '10px 0', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}>Remove Student</button>
+        </form>
+        {/* Camera Modal */}
+        {cameraOpen && (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ background: 'white', borderRadius: 16, padding: 24, boxShadow: '0 4px 24px #0003', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <h3 style={{ fontWeight: 700, color: '#1848c1', marginBottom: 12 }}>Camera</h3>
+              {cameraError ? (
+                <div style={{ color: 'red', margin: 16 }}>{cameraError}</div>
+              ) : (
+                <video ref={videoRef} width={320} height={240} autoPlay style={{ borderRadius: 8, background: '#000' }} />
+              )}
+              <canvas ref={canvasRef} width={320} height={240} style={{ display: 'none' }} />
+              <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
+                <button onClick={captureFace} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 500, fontSize: 15 }}>Capture</button>
+                <button onClick={closeCamera} style={{ background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 500, fontSize: 15 }}>Close</button>
               </div>
             </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="shadow-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Camera className="h-8 w-8 text-accent" />
-              <div>
-                <p className="text-2xl font-bold text-accent">2,987</p>
-                <p className="text-sm text-muted-foreground">Face Data Ready</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="shadow-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Users className="h-8 w-8 text-primary" />
-              <div>
-                <p className="text-2xl font-bold text-primary">1,847</p>
-                <p className="text-sm text-muted-foreground">Present Today</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="shadow-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <Filter className="h-8 w-8 text-muted-foreground" />
-              <div>
-                <p className="text-2xl font-bold text-muted-foreground">434</p>
-                <p className="text-sm text-muted-foreground">Pending Setup</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Search and Filters */}
-      <Card className="shadow-card">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, roll number, or department..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <Button variant="outline">
-              <Filter className="h-4 w-4" />
-              Filters
-            </Button>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Student List */}
-      <Card className="shadow-card">
-        <CardHeader>
-          <CardTitle>Student Directory</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {filteredStudents.map((student) => (
-              <div
-                key={student.id}
-                className="flex items-center justify-between p-4 border border-border rounded-lg hover:shadow-card transition-smooth bg-card"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-secondary rounded-full flex items-center justify-center text-secondary-foreground font-semibold">
-                    {student.name.charAt(0)}
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-foreground">{student.name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {student.rollNo} • {student.year}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{student.department}</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <Badge variant={student.hasFaceData ? "default" : "secondary"}>
-                      {student.hasFaceData ? "Face Data Ready" : "Setup Required"}
-                    </Badge>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Last seen: {student.lastSeen}
-                    </p>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="capture"
-                      size="sm"
-                      onClick={() => handleCaptureFace(student)}
-                    >
-                      <Camera className="h-4 w-4" />
-                      {student.hasFaceData ? "Update" : "Capture"}
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Edit className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
+        )}
           </div>
-        </CardContent>
-      </Card>
     </div>
   );
 };
