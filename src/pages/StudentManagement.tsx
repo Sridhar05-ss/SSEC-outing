@@ -69,7 +69,7 @@ const StudentManagement: React.FC = () => {
         registernumber: register,
         parentphone: parentPhone,
         mode: hostel,
-        password: dob,
+        password: dob, // Save DOB as password
         role: "student",
         captureStatus: "Not Captured"
       });
@@ -106,6 +106,7 @@ const StudentManagement: React.FC = () => {
           <input placeholder="Register Number" value={register} onChange={e => setRegister(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
           <input placeholder="Student ID" value={studentId} onChange={e => setStudentId(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
           <input placeholder="Parent's Phone Number" value={parentPhone} onChange={e => setParentPhone(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
+          <input type="date" placeholder="Date of Birth" value={dob} onChange={e => setDob(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }} />
           <select value={department} onChange={e => setDepartment(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 16 }}>
             {departments.map(dept => <option key={dept} value={dept}>{dept}</option>)}
           </select>

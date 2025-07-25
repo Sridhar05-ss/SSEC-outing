@@ -11,6 +11,7 @@ interface Student {
   face?: string;
   role?: string;
   mode?: string;
+  password?: string;
 }
 
 interface StudentDetailsProps {
@@ -65,7 +66,8 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
         Name: editData.name || editData.Name,
         department: editData.department,
         role: editData.role,
-        mode: editData.mode
+        mode: editData.mode,
+        password: editData.password // Save DOB as password
       });
       alert("Student updated!");
       setEditModal({ open: false });
@@ -173,6 +175,8 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
                 <option value="Hosteller">Hosteller</option>
                 <option value="DayScholar">DayScholar</option>
               </select>
+              <label style={{ fontWeight: 500 }}>DOB</label>
+              <input type="date" value={editData.password || ''} onChange={e => setEditData(prev => ({ ...prev, password: e.target.value }))} style={{ padding: 8, borderRadius: 4, border: '1px solid #ccc' }} />
               <button type="button" onClick={() => openCamera(editData.username || "", editData.department || departments[0])}
                 style={{ background: '#e0e7ff', color: '#2563eb', border: '1px solid #2563eb', borderRadius: 6, padding: '10px 0', fontWeight: 500, cursor: 'pointer', marginTop: 8 }}>
                 📷 Capture/Edit Face
