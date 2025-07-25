@@ -41,6 +41,7 @@ const StaffDetails: React.FC = () => {
   const [currentStaffId, setCurrentStaffId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchStaff = () => {
     setLoading(true);
@@ -180,13 +181,35 @@ const StaffDetails: React.FC = () => {
     setSaving(false);
   };
 
+  // Filter staff based on search query
+  const filteredStaff = staff.filter((s) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      (s.username && s.username.toLowerCase().includes(query)) ||
+      (s.name && s.name.toLowerCase().includes(query)) ||
+      (s.department && s.department.toLowerCase().includes(query)) ||
+      (s.role && s.role.toLowerCase().includes(query))
+    );
+  });
+
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', background: 'white', borderRadius: 18, boxShadow: '0 8px 32px #0001', padding: 32 }}>
       <h2 style={{fontWeight: 700, color: '#1848c1', marginBottom: 24, fontSize: 28}}>Staff Details</h2>
       {error && <div style={{color: 'red', marginBottom: 8}}>{error}</div>}
+      {/* Search Bar */}
+      <div style={{ marginBottom: '1rem' }}>
+        <input
+          type="text"
+          placeholder="Search staff..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
+        />
+      </div>
+      {/* Staff Table */}
       <div style={{overflowX: 'auto'}}>
         <table style={{width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 900}}>
-          <thead>
+      <thead>
             <tr style={{background: '#2563eb', color: 'white', fontWeight: 700, fontSize: 18}}>
               <th style={{padding: '12px 16px', width: 120, textAlign: 'left', whiteSpace: 'nowrap'}}>Staff ID</th>
               <th style={{padding: '12px 16px', width: 220, textAlign: 'left', whiteSpace: 'nowrap'}}>Name</th>
@@ -194,15 +217,15 @@ const StaffDetails: React.FC = () => {
               <th style={{padding: '12px 16px', width: 160, textAlign: 'left', whiteSpace: 'nowrap'}}>Role</th>
               <th style={{padding: '12px 16px', width: 160, textAlign: 'center', whiteSpace: 'nowrap'}}>Capture Status</th>
               <th style={{padding: '12px 16px', width: 160, textAlign: 'center', whiteSpace: 'nowrap'}}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
+        </tr>
+      </thead>
+      <tbody>
+        {loading ? (
               <tr><td colSpan={6} style={{padding: 24, textAlign: 'center'}}>Loading...</td></tr>
-            ) : staff.length === 0 ? (
+        ) : filteredStaff.length === 0 ? (
               <tr><td colSpan={6} style={{padding: 24, textAlign: 'center'}}>No staff found.</td></tr>
             ) : (
-              staff.map((s, i) => (
+              filteredStaff.map((s, i) => (
                 <tr key={s.username || s.id} style={{background: i % 2 === 0 ? '#f1f5fb' : 'white'}}>
                   <td style={{padding: '10px 16px', fontFamily: 'monospace', fontWeight: 500, maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{s.username || s.id || ''}</td>
                   <td style={{padding: '10px 16px', maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{s.name}</td>
@@ -213,8 +236,8 @@ const StaffDetails: React.FC = () => {
                       <span style={{background: '#bbf7d0', color: '#15803d', padding: '4px 16px', borderRadius: 8, fontSize: 15, fontWeight: 500, display: 'inline-block'}}>✔ Captured</span>
                     ) : (
                       <span style={{background: '#fecaca', color: '#b91c1c', padding: '4px 16px', borderRadius: 8, fontSize: 15, fontWeight: 500, display: 'inline-block'}}>✖ Not Captured</span>
-                    )}
-                  </td>
+                )}
+              </td>
                   <td style={{padding: '10px 16px', textAlign: 'center'}}>
                     <button onClick={() => openCamera(s.username || s.id || "")} style={{marginRight: 8, background: '#3b82f6', color: 'white', border: 'none', borderRadius: 4, padding: '6px 18px', cursor: 'pointer', fontWeight: 500, fontSize: 15}}>Capture</button>
                     <Dialog open={editModal.open && editModal.staff?.username === s.username} onOpenChange={open => setEditModal(open ? { open: true, staff: s } : { open: false })}>
@@ -249,12 +272,12 @@ const StaffDetails: React.FC = () => {
                         </form>
                       </DialogContent>
                     </Dialog>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
       </div>
       {cameraOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

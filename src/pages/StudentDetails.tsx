@@ -38,6 +38,7 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState("");
   const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Load face-api.js models on mount
   useEffect(() => {
@@ -146,10 +147,33 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
     }
   };
 
+  // Filter students based on search query
+  const filteredStudents = students.filter((student) => {
+    const query = searchQuery.toLowerCase();
+    return (
+      (student.username && student.username.toLowerCase().includes(query)) ||
+      (student.name && student.name.toLowerCase().includes(query)) ||
+      (student.Name && student.Name.toLowerCase().includes(query)) ||
+      (student.department && student.department.toLowerCase().includes(query)) ||
+      (student.mode && student.mode.toLowerCase().includes(query))
+    );
+  });
+
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto', background: 'white', borderRadius: 18, boxShadow: '0 8px 32px #0001', padding: 32 }}>
       <h2 style={{fontWeight: 700, color: '#1848c1', marginBottom: 24, fontSize: 24}}>Student Details - {department}</h2>
       {error && <div style={{color: 'red', marginBottom: 8}}>{error}</div>}
+      {/* Search Bar */}
+      <div style={{ marginBottom: '1rem' }}>
+        <input
+          type="text"
+          placeholder="Search students..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ccc' }}
+        />
+      </div>
+      {/* Student Table */}
       <div style={{overflowX: 'auto'}}>
         <table style={{width: '100%', borderCollapse: 'separate', borderSpacing: 0, minWidth: 900}}>
           <thead>
@@ -165,10 +189,10 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
           <tbody>
             {loading ? (
               <tr><td colSpan={5} style={{padding: 24, textAlign: 'center'}}>Loading...</td></tr>
-            ) : students.length === 0 ? (
+            ) : filteredStudents.length === 0 ? (
               <tr><td colSpan={5} style={{padding: 24, textAlign: 'center'}}>No students found.</td></tr>
             ) : (
-              students.map((s, i) => (
+              filteredStudents.map((s, i) => (
                 <tr key={s.username || i} style={{background: i % 2 === 0 ? '#f1f5fb' : 'white'}}>
                   <td style={{padding: '10px 16px', fontFamily: 'monospace', fontWeight: 500, maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{s.username || ''}</td>
                   <td style={{padding: '10px 16px', maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{s.name || s.Name || ''}</td>
