@@ -45,7 +45,7 @@ const Admin: React.FC = () => {
           <div
             style={{ padding: '8px 0', cursor: 'pointer', background: view === 'student-mgmt' ? '#1e40af' : 'transparent', borderRadius: 6, marginBottom: 4, textAlign: 'left', paddingLeft: 16 }}
             onClick={() => setView('student-mgmt')}
-          >
+                  >
             Student Management
           </div>
           <div

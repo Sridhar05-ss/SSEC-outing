@@ -10,6 +10,7 @@ import {
   DialogFooter,
   DialogClose
 } from "../components/ui/dialog";
+import * as faceapi from 'face-api.js';
 
 type Staff = {
   username?: string;
@@ -39,6 +40,7 @@ const StaffDetails: React.FC = () => {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [currentStaffId, setCurrentStaffId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
 
   const fetchStaff = () => {
     setLoading(true);
@@ -54,6 +56,21 @@ const StaffDetails: React.FC = () => {
 
   useEffect(() => {
     fetchStaff();
+  }, []);
+
+  // Load face-api.js models on mount
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+        setModelsLoaded(true);
+      } catch (err) {
+        setCameraError("Failed to load face recognition models.");
+      }
+    };
+    loadModels();
   }, []);
 
   // Camera logic for capture modal
@@ -99,12 +116,24 @@ const StaffDetails: React.FC = () => {
     if (stream) stream.getTracks().forEach(track => track.stop());
   };
   const captureFace = async () => {
+    if (!modelsLoaded) {
+      setCameraError("Face recognition models not loaded yet.");
+      return;
+    }
     if (videoRef.current && canvasRef.current && currentStaffId) {
       const ctx = canvasRef.current.getContext('2d');
       if (ctx) {
         ctx.drawImage(videoRef.current, 0, 0, 320, 240);
         const dataUrl = canvasRef.current.toDataURL('image/png');
-        await set(ref(db, `staff/${currentStaffId}/face`), dataUrl);
+        // Extract 128D descriptor
+        const img = await faceapi.fetchImage(dataUrl);
+        const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
+        if (!detection) {
+          setCameraError("No face detected. Please try again with your face clearly visible and well-lit.");
+          return;
+        }
+        const descriptor = Array.from(detection.descriptor);
+        await set(ref(db, `staff/${currentStaffId}/faceDescriptor`), descriptor);
         alert('Face captured and saved!');
         closeCamera();
         fetchStaff();
@@ -180,7 +209,7 @@ const StaffDetails: React.FC = () => {
                   <td style={{padding: '10px 16px', maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{s.department}</td>
                   <td style={{padding: '10px 16px', maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{s.role}</td>
                   <td style={{padding: '10px 16px', textAlign: 'center'}}>
-                    {s.face ? (
+                    {Array.isArray((s as any).faceDescriptor) ? (
                       <span style={{background: '#bbf7d0', color: '#15803d', padding: '4px 16px', borderRadius: 8, fontSize: 15, fontWeight: 500, display: 'inline-block'}}>✔ Captured</span>
                     ) : (
                       <span style={{background: '#fecaca', color: '#b91c1c', padding: '4px 16px', borderRadius: 8, fontSize: 15, fontWeight: 500, display: 'inline-block'}}>✖ Not Captured</span>
@@ -231,6 +260,10 @@ const StaffDetails: React.FC = () => {
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'white', borderRadius: 16, padding: 24, boxShadow: '0 4px 24px #0003', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <h3 style={{ fontWeight: 700, color: '#1848c1', marginBottom: 12 }}>Camera</h3>
+            <div style={{ color: '#2563eb', marginBottom: 8, fontWeight: 500, fontSize: 15 }}>
+              For best results, ensure your face is well-lit and clearly visible.
+            </div>
+            {!modelsLoaded && <div style={{ color: 'blue', margin: 8 }}>Loading face recognition models...</div>}
             {cameraError ? (
               <div style={{ color: 'red', margin: 16 }}>{cameraError}</div>
             ) : (
@@ -238,7 +271,7 @@ const StaffDetails: React.FC = () => {
             )}
             <canvas ref={canvasRef} width={320} height={240} style={{ display: 'none' }} />
             <div style={{ marginTop: 16, display: 'flex', gap: 12 }}>
-              <button onClick={captureFace} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 500, fontSize: 15 }}>Capture</button>
+              <button onClick={captureFace} disabled={!modelsLoaded} style={{ background: '#2563eb', color: 'white', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 500, fontSize: 15, opacity: !modelsLoaded ? 0.6 : 1, cursor: !modelsLoaded ? 'not-allowed' : 'pointer' }}>Capture</button>
               <button onClick={closeCamera} style={{ background: '#e5e7eb', color: '#374151', border: 'none', borderRadius: 6, padding: '8px 18px', fontWeight: 500, fontSize: 15 }}>Close</button>
             </div>
           </div>
