@@ -3,49 +3,49 @@
 @tailwind utilities;
 
 /* Sree Sakthi Engineering College Design System
-Orange/Yellow branding with professional gradients and shadows
+Blue/White branding with professional gradients and shadows
 */
 
 @layer base {
   :root {
-    /* College Brand Colors - Orange/Yellow Theme */
-    --background: 35 20% 98%;
-    --foreground: 25 25% 15%;
+    /* Blue/White Theme */
+    --background: 0 0% 100%; /* white */
+    --foreground: 220 40% 20%; /* dark blue */
 
     --card: 0 0% 100%;
-    --card-foreground: 25 25% 15%;
+    --card-foreground: 220 40% 20%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 25 25% 15%;
+    --popover-foreground: 220 40% 20%;
 
-    /* Primary - Deep Orange */
-    --primary: 20 85% 55%;
-    --primary-foreground: 0 0% 100%;
-    --primary-glow: 30 95% 65%;
+    /* Primary - Blue */
+    --primary: 220 90% 56%; /* blue-600 */
+    --primary-foreground: 0 0% 100%; /* white */
+    --primary-glow: 220 100% 70%; /* lighter blue */
 
-    /* Secondary - Warm Yellow */
-    --secondary: 45 95% 85%;
-    --secondary-foreground: 25 25% 15%;
+    /* Secondary - Light Blue */
+    --secondary: 210 100% 96%; /* blue-50 */
+    --secondary-foreground: 220 40% 20%;
 
-    --muted: 35 40% 95%;
-    --muted-foreground: 25 15% 55%;
+    --muted: 210 40% 98%;
+    --muted-foreground: 220 20% 50%;
 
-    /* Accent - Bright Orange */
-    --accent: 25 90% 60%;
+    /* Accent - Blue Accent */
+    --accent: 200 100% 50%; /* blue accent */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 35 25% 88%;
-    --input: 35 25% 92%;
-    --ring: 20 85% 55%;
+    --border: 210 20% 90%;
+    --input: 210 20% 95%;
+    --ring: 220 90% 56%;
 
-    /* Gate Terminal Colors - Dark Blue Theme */
-    --gate-primary: 210 100% 27%;
-    --gate-background: 210 30% 8%;
-    --gate-foreground: 0 0% 100%;
-    --gate-accent: 210 100% 50%;
+    /* Gate Terminal Colors - Blue Theme */
+    --gate-primary: 220 90% 56%;
+    --gate-background: 220 30% 98%;
+    --gate-foreground: 220 40% 20%;
+    --gate-accent: 200 100% 50%;
 
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-glow)));
@@ -63,59 +63,52 @@ Orange/Yellow branding with professional gradients and shadows
 
     --radius: 0.75rem;
 
-    --sidebar-background: 0 0% 98%;
-
-    --sidebar-foreground: 240 5.3% 26.1%;
-
-    --sidebar-primary: 240 5.9% 10%;
-
-    --sidebar-primary-foreground: 0 0% 98%;
-
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 220 40% 20%;
+    --sidebar-primary: 220 90% 56%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 210 100% 96%;
+    --sidebar-accent-foreground: 220 40% 20%;
+    --sidebar-border: 210 20% 90%;
+    --sidebar-ring: 220 90% 56%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
+    --background: 220 40% 10%; /* dark blue */
+    --foreground: 210 40% 98%; /* white/near white */
 
-    --card: 222.2 84% 4.9%;
+    --card: 220 40% 12%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222.2 84% 4.9%;
+    --popover: 220 40% 12%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
+    --primary: 210 100% 66%; /* lighter blue */
     --primary-foreground: 222.2 47.4% 11.2%;
 
-    --secondary: 217.2 32.6% 17.5%;
+    --secondary: 210 30% 20%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
+    --muted: 210 30% 20%;
     --muted-foreground: 215 20.2% 65.1%;
 
-    --accent: 217.2 32.6% 17.5%;
+    --accent: 210 100% 66%;
     --accent-foreground: 210 40% 98%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --border: 210 30% 20%;
+    --input: 210 30% 20%;
+    --ring: 210 100% 66%;
+    --sidebar-background: 220 40% 10%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 210 100% 66%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 210 30% 20%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 210 30% 20%;
+    --sidebar-ring: 210 100% 66%;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { 
@@ -25,6 +25,8 @@ const GateTerminal = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scanStatus, setScanStatus] = useState<ScanStatus>("idle");
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
   // Update time every second
   useEffect(() => {
@@ -45,28 +47,59 @@ const GateTerminal = () => {
     }
   }, [scanStatus]);
 
-  const handleStartScan = () => {
+  // Stop camera stream helper
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach((track) => track.stop());
+      setCameraStream(null);
+    }
+  };
+
+  // Clean up camera on unmount or when not scanning
+  useEffect(() => {
+    if (scanStatus !== "scanning") {
+      stopCamera();
+    }
+    return () => {
+      stopCamera();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanStatus]);
+
+  const handleStartScan = async () => {
+    // Clear all temporary data
+    setRecognitionResult(null);
     setScanStatus("scanning");
-    
-    // Simulate face recognition process
-    setTimeout(() => {
-      const isSuccess = Math.random() > 0.2; // 80% success rate for demo
-      
-      if (isSuccess) {
-        const mockResults = [
-          { name: "Dr. Rajesh Kumar", id: "ST001", department: "Computer Science", role: "Professor" },
-          { name: "Priya Sharma", id: "20CS101", department: "Computer Science", role: "Student" },
-          { name: "Prof. Anita Singh", id: "ST002", department: "Electronics", role: "Associate Professor" },
-          { name: "Rahul Patel", id: "20EC205", department: "Electronics", role: "Student" },
-        ];
-        
-        const result = mockResults[Math.floor(Math.random() * mockResults.length)];
-        setRecognitionResult(result);
-        setScanStatus("success");
-      } else {
-        setScanStatus("denied");
+
+    // Request camera access
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
       }
-    }, 2000);
+      // Simulate face recognition process
+      setTimeout(() => {
+        const isSuccess = Math.random() > 0.2; // 80% success rate for demo
+        if (isSuccess) {
+          const mockResults = [
+            { name: "Dr. Rajesh Kumar", id: "ST001", department: "Computer Science", role: "Professor" },
+            { name: "Priya Sharma", id: "20CS101", department: "Computer Science", role: "Student" },
+            { name: "Prof. Anita Singh", id: "ST002", department: "Electronics", role: "Associate Professor" },
+            { name: "Rahul Patel", id: "20EC205", department: "Electronics", role: "Student" },
+          ];
+          const result = mockResults[Math.floor(Math.random() * mockResults.length)];
+          setRecognitionResult(result);
+          setScanStatus("success");
+        } else {
+          setScanStatus("denied");
+        }
+      }, 2000);
+    } catch (err) {
+      // Camera access denied
+      setScanStatus("denied");
+    }
   };
 
   const formatTime = (date: Date) => {
@@ -149,8 +182,15 @@ const GateTerminal = () => {
         {scanStatus === "scanning" && (
           <Card className="bg-white/10 backdrop-blur-sm border-white/20">
             <CardContent className="p-8 text-center space-y-6">
-              <div className="w-32 h-32 mx-auto bg-white/20 rounded-full flex items-center justify-center animate-pulse">
-                <Scan className="h-16 w-16 text-white animate-spin" />
+              <div className="w-32 h-32 mx-auto bg-white/20 rounded-full flex items-center justify-center overflow-hidden">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  className="w-32 h-32 object-cover rounded-full border-2 border-white"
+                  style={{ background: '#000' }}
+                  muted
+                />
               </div>
               <div>
                 <h2 className="text-2xl font-bold text-white mb-2">Scanning...</h2>

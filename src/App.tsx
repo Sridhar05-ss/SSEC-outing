@@ -1,35 +1,35 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Layout from "./components/Layout";
-import Dashboard from "./pages/Dashboard";
-import StaffManagement from "./pages/StaffManagement";
-import StudentManagement from "./pages/StudentManagement";
-import GateTerminal from "./pages/GateTerminal";
-import AccessLogs from "./pages/AccessLogs";
-import NotFound from "./pages/NotFound";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import Login from './pages/Login';
+import Admin from './pages/Admin';
+import Management from './pages/Management';
+import Gate from './pages/Gate';
+import { fakeAuth } from './lib/fakeAuth';
+import React from 'react';
 
-const queryClient = new QueryClient();
+function RequireAuth({ children, role }: { children: JSX.Element, role: 'admin' | 'management' | 'gate' }) {
+  const location = useLocation();
+  if (!fakeAuth.isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  if (role && fakeAuth.role !== role) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+}
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
+function App() {
+  return (
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Layout><Dashboard /></Layout>} />
-          <Route path="/staff" element={<Layout><StaffManagement /></Layout>} />
-          <Route path="/students" element={<Layout><StudentManagement /></Layout>} />
-          <Route path="/gate" element={<GateTerminal />} />
-          <Route path="/logs" element={<Layout><AccessLogs /></Layout>} />
-          <Route path="*" element={<NotFound />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/admin" element={<RequireAuth role="admin"><Admin /></RequireAuth>} />
+        <Route path="/management" element={<RequireAuth role="management"><Management /></RequireAuth>} />
+        <Route path="/gate" element={<RequireAuth role="gate"><Gate /></RequireAuth>} />
+        {/* Default route: redirect to login */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
 );
+}
 
 export default App;
