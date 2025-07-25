@@ -6,6 +6,10 @@ const Gate = () => {
   const [loading, setLoading] = useState(false);
   // Simulated recognition status
   const [recognitionStatus, setRecognitionStatus] = useState("");
+  // Visitor pass form state
+  const [visitorName, setVisitorName] = useState("");
+  const [visitorMobile, setVisitorMobile] = useState("");
+  const [visitorReason, setVisitorReason] = useState("");
 
   const handleToggleScanner = (on: boolean) => {
     if (on) {
@@ -16,7 +20,8 @@ const Gate = () => {
         setStatus("Scanner Active");
         // Simulate recognition after 2s
         setTimeout(() => {
-          setRecognitionStatus("✅ Mohamed Thameem has been logged in");
+          // Simulate not recognized for demo
+          setRecognitionStatus("❌ Face not recognized");
         }, 2000);
       }, 1000);
     } else {
@@ -72,6 +77,45 @@ const Gate = () => {
             <p id="recognition-status" className="mt-4 text-center text-xl text-green-600 font-semibold min-h-[2rem]">
               {recognitionStatus}
             </p>
+            {/* Visitor Pass Box if not recognized */}
+            {recognitionStatus && recognitionStatus.toLowerCase().includes('not recognized') && (
+              <div className="bg-white w-[90%] max-w-xl mx-auto mt-6 p-6 rounded-xl shadow-lg space-y-4">
+                <h2 className="text-xl font-semibold text-center">VISITORS PASS</h2>
+                <form className="space-y-4">
+                  <div>
+                    <label className="block text-left font-medium mb-1">Name</label>
+                    <input
+                      type="text"
+                      className="w-full border border-blue-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="Enter your name"
+                      value={visitorName}
+                      onChange={e => setVisitorName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-left font-medium mb-1">Mobile Number</label>
+                    <input
+                      type="number"
+                      className="w-full border border-blue-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="Enter your mobile number"
+                      value={visitorMobile}
+                      onChange={e => setVisitorMobile(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-left font-medium mb-1">Reason of Visit</label>
+                    <textarea
+                      className="w-full border border-blue-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      placeholder="Enter reason for your visit"
+                      value={visitorReason}
+                      onChange={e => setVisitorReason(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                  {/* You can add a submit button here if needed */}
+                </form>
+              </div>
+            )}
           </>
         )}
       </div>
