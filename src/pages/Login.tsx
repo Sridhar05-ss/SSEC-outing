@@ -40,32 +40,32 @@ const Login = () => {
           <div className="p-10 bg-white shadow-lg rounded-2xl text-center">
             <h1 className="text-2xl font-semibold text-center mb-6 text-gray-800">Gate In Gate Out</h1>
             <form className="space-y-6" onSubmit={handleSubmit} autoComplete="on">
-              <div>
+          <div>
                 <label htmlFor="username" className="block text-blue-700 font-semibold mb-1 text-left">Username</label>
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
+            <input
+              id="username"
+              name="username"
+              type="text"
                   className="w-full border border-blue-700 rounded pl-4 pr-10 py-2 focus:outline-none focus:ring-2 focus:ring-blue-700"
-                  placeholder="Enter your username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  autoComplete="username"
-                />
-              </div>
-              <div>
+              placeholder="Enter your username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+            />
+          </div>
+          <div>
                 <label htmlFor="password" className="block text-blue-700 font-semibold mb-1 text-left">Password</label>
                 <div className="relative w-full">
-                  <input
-                    id="password"
-                    name="password"
+            <input
+              id="password"
+              name="password"
                     type={showPassword ? "text" : "password"}
                     className="w-full px-4 py-2 pr-10 rounded border border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700"
                     placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    autoComplete="current-password"
-                  />
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
                   <span
                     className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 cursor-pointer"
                     onClick={() => setShowPassword((v) => !v)}
@@ -80,10 +80,10 @@ const Login = () => {
                     )}
                   </span>
                 </div>
-              </div>
+          </div>
               <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl font-semibold transition">Login</button>
-            </form>
-            {error && <p className="text-red-600 text-center mt-4">{error}</p>}
+        </form>
+        {error && <p className="text-red-600 text-center mt-4">{error}</p>}
             <p className="text-center text-sm text-blue-700 mt-4">Demo credentials:<br/>admin/admin123, manager/manager123, gate/gate123</p>
           </div>
         </div>

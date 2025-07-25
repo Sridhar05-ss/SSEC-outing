@@ -47,7 +47,7 @@ const Gate = () => {
             {loading && !scannerActive ? (
               <span className="flex items-center gap-2"><svg className="animate-spin h-5 w-5 text-white" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" /></svg>Starting...</span>
             ) : (
-              "Start Scanner"
+              "Start Camera"
             )}
           </button>
           <button
@@ -55,7 +55,7 @@ const Gate = () => {
             onClick={() => handleToggleScanner(false)}
             disabled={!scannerActive}
           >
-            End Scanner
+            End Camera
           </button>
         </div>
         {/* Status Text */}
@@ -112,7 +112,7 @@ const Gate = () => {
                       rows={3}
                     />
                   </div>
-                  {/* You can add a submit button here if needed */}
+                  <button className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" type="button">Add Visitor</button>
                 </form>
               </div>
             )}
