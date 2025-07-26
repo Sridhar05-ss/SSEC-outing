@@ -62,6 +62,9 @@ interface AccessLog {
   status: "granted" | "denied";
   reason?: string;
   passRequestId?: string;
+  outingApproved?: boolean;
+  outingRequestId?: string;
+  role?: "student" | "staff";
 }
 
 const GateTerminal = () => {
@@ -144,6 +147,33 @@ const GateTerminal = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanStatus]);
+
+  // Get current attendance status for a person
+  const getCurrentAttendanceStatus = async (personId: string, role: string) => {
+    try {
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      let collectionPath = "";
+      
+      if (role === "staff") {
+        collectionPath = `attendance/${today}/staff/${personId}`;
+      } else {
+        collectionPath = `attendance/${today}/students/${personId}`;
+      }
+      
+      console.log('Checking attendance status at path:', collectionPath);
+      const snapshot = await get(ref(db, collectionPath));
+      const result = { 
+        exists: snapshot.exists(), 
+        data: snapshot.exists() ? snapshot.val() : null,
+        collection: role === "staff" ? "staff" : "student"
+      };
+      console.log('Attendance status result:', result);
+      return result;
+    } catch (error) {
+      console.error('Error getting attendance status:', error);
+      return { exists: false, data: null, collection: null };
+    }
+  };
 
   // Auto-capture function
   const startAutoCapture = () => {
@@ -284,7 +314,7 @@ const GateTerminal = () => {
           await handleStaffAccess(foundPerson);
         } else {
           console.log('Processing as student...');
-          await checkPassApprovalAndLogAccess(foundPerson);
+          await handleStudentAccess(foundPerson);
         }
       } else {
         setScanStatus("denied");
@@ -300,9 +330,59 @@ const GateTerminal = () => {
   // Handle staff access (staff can always enter/exit)
   const handleStaffAccess = async (staff: RecognitionResult) => {
     try {
-      // Staff can always access - determine direction based on time of day
-      const currentHour = new Date().getHours();
-      const direction = currentHour < 12 ? "in" : "out"; // Morning = in, Afternoon/Evening = out
+      console.log('=== STAFF ACCESS HANDLING START ===');
+      console.log('Staff details:', staff);
+      
+      // Get current attendance status
+      const attendanceStatus = await getCurrentAttendanceStatus(staff.id, "staff");
+      console.log('Current attendance status:', attendanceStatus);
+      
+      // Determine direction based on current status
+      let direction: "in" | "out";
+      let inTime = "";
+      let outTime = "";
+      let inTimestamp = "";
+      let outTimestamp = "";
+      
+      if (!attendanceStatus.exists || !attendanceStatus.data) {
+        // First entry of the day
+        direction = "in";
+        inTime = new Date().toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        inTimestamp = new Date().toISOString();
+        console.log('First entry - setting IN time:', inTime);
+      } else {
+        // Check if they have an out time
+        const existingData = attendanceStatus.data;
+        console.log('Existing data:', existingData);
+        if (!existingData.out || existingData.out === "inside") {
+          // They're going out
+          direction = "out";
+          outTime = new Date().toLocaleTimeString('en-US', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          outTimestamp = new Date().toISOString();
+          console.log('Going OUT - setting OUT time:', outTime);
+        } else {
+          // They're coming back in
+          direction = "in";
+          inTime = new Date().toLocaleTimeString('en-US', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          inTimestamp = new Date().toISOString();
+          console.log('Coming back IN - setting IN time:', inTime);
+        }
+      }
 
       // Create access log for staff
       const accessLogData: AccessLog = {
@@ -319,51 +399,176 @@ const GateTerminal = () => {
 
       setAccessLog(accessLogData);
 
-      // Save to Firebase - Staff logs by date
+      // Save to NEW attendance collection
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const logIndex = attendanceStatus.exists ? Object.keys(attendanceStatus.data).length : 0;
       
-      console.log('Saving staff access log to Firebase:', accessLogData);
-      await set(ref(db, `Attendance_Log_staffs/${today}/${accessLogData.id}`), accessLogData);
-      console.log(`Staff access log saved successfully to Firebase at Attendance_Log_staffs/${today}/${accessLogData.id}`);
+      const logData = {
+        department: staff.department,
+        name: staff.name,
+        username: staff.id,
+        role: "staff",
+        mode: "Staff",
+        ...(inTime && { in: inTime, in_timestamp: inTimestamp }),
+        ...(outTime && { out: outTime, out_timestamp: outTimestamp }),
+        ...(!outTime && { out: "inside" }),
+        created_at: new Date().toISOString()
+      };
+
+      console.log('=== SAVING STAFF LOG TO NEW ATTENDANCE COLLECTION ===');
+      console.log('Date:', today);
+      console.log('Staff ID:', staff.id);
+      console.log('Log Index:', logIndex);
+      console.log('Log Data:', logData);
+      console.log('Firebase Path:', `attendance/${today}/staff/${staff.id}/${logIndex}`);
+      
+      try {
+        await set(ref(db, `attendance/${today}/staff/${staff.id}/${logIndex}`), logData);
+        console.log('✅ Staff access log saved successfully to NEW attendance collection!');
+        
+        // Verify the save by reading it back
+        const verifyRef = ref(db, `attendance/${today}/staff/${staff.id}/${logIndex}`);
+        const verifySnapshot = await get(verifyRef);
+        if (verifySnapshot.exists()) {
+          console.log('✅ Verification successful - data exists in NEW attendance collection');
+          console.log('Verified data:', verifySnapshot.val());
+        } else {
+          console.log('❌ Verification failed - data not found in NEW attendance collection');
+        }
+      } catch (firebaseError) {
+        console.error('❌ Firebase write error:', firebaseError);
+        console.error('Error details:', {
+          message: firebaseError.message,
+          code: firebaseError.code,
+          stack: firebaseError.stack
+        });
+        throw firebaseError;
+      }
 
       setScanStatus("success");
-      setMessage(`Staff access ${direction === "out" ? "granted" : "granted"} for ${staff.name}`);
+      setMessage(`Staff ${direction === "out" ? "exit" : "entry"} recorded for ${staff.name}`);
+      console.log('=== STAFF ACCESS HANDLING COMPLETE ===');
 
     } catch (error) {
-      console.error('Error handling staff access:', error);
+      console.error('❌ Error handling staff access:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       setScanStatus("denied");
       setMessage("Error processing staff access. Please try again.");
     }
   };
 
-  // Check pass approval and log access
-  const checkPassApprovalAndLogAccess = async (student: RecognitionResult) => {
+  // Handle student access with proper IN/OUT logic
+  const handleStudentAccess = async (student: RecognitionResult) => {
     try {
-      // Get the latest pass request for this student
-      const passRequestsRef = ref(db, "passRequests");
-      const q = query(
-        passRequestsRef, 
-        orderByChild("username"), 
-        equalTo(student.id), 
-        limitToLast(1)
-      );
+      console.log('=== STUDENT ACCESS HANDLING START ===');
+      console.log('Student details:', student);
       
-      const snapshot = await get(q);
+      // Get current attendance status
+      const attendanceStatus = await getCurrentAttendanceStatus(student.id, "student");
+      console.log('Current attendance status:', attendanceStatus);
+      
+      // Check for approved outing request (only for hostellers)
       let approvedRequest: PassRequest | null = null;
-
-      if (snapshot.exists()) {
-        const requests = snapshot.val();
-        const latestRequest = Object.values(requests)[0] as PassRequest;
+      if (student.mode === "Hosteller") {
+        console.log('Checking for approved outing request...');
+        const passRequestsRef = ref(db, "passRequests");
+        const q = query(
+          passRequestsRef, 
+          orderByChild("username"), 
+          equalTo(student.id), 
+          limitToLast(1)
+        );
         
-        // Check if request is approved
-        if (latestRequest.status === "warden_approved" || latestRequest.status === "approved") {
-          approvedRequest = latestRequest;
+        const snapshot = await get(q);
+        if (snapshot.exists()) {
+          const requests = snapshot.val();
+          const latestRequest = Object.values(requests)[0] as PassRequest;
+          console.log('Latest pass request:', latestRequest);
+          
+          // Check if request is approved
+          if (latestRequest.status === "warden_approved" || latestRequest.status === "approved") {
+            approvedRequest = latestRequest;
+            console.log('✅ Approved request found:', approvedRequest);
+          } else {
+            console.log('❌ Request not approved, status:', latestRequest.status);
+          }
+        } else {
+          console.log('No pass requests found for student');
         }
       }
 
-      // Determine entry/exit based on student mode
-      const isHosteller = student.mode === "Hosteller";
-      const direction = isHosteller ? "out" : "in"; // Hosteller: first scan = out, DayScholar: first scan = in
+      // Determine direction based on student mode and current status
+      let direction: "in" | "out";
+      let status: "granted" | "denied" = "granted";
+      let reason = "";
+      let inTime = "";
+      let outTime = "";
+      let inTimestamp = "";
+      let outTimestamp = "";
+
+      if (student.mode === "Hosteller") {
+        console.log('Processing as HOSTELLER');
+        // Hosteller logic: First scan = out, Second scan = in
+        if (!attendanceStatus.exists || !attendanceStatus.data) {
+          direction = "out";
+          if (!approvedRequest) {
+            status = "denied";
+            reason = "No approved outing request";
+            console.log('❌ Access denied - no approved outing request');
+          } else {
+            reason = `Approved ${approvedRequest.type} request`;
+            outTime = new Date().toLocaleTimeString('en-US', { 
+              hour12: false, 
+              hour: '2-digit', 
+              minute: '2-digit',
+              second: '2-digit'
+            });
+            outTimestamp = new Date().toISOString();
+            console.log('✅ Hosteller going OUT - setting OUT time:', outTime);
+          }
+        } else {
+          direction = "in";
+          reason = "Returning to hostel";
+          inTime = new Date().toLocaleTimeString('en-US', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          inTimestamp = new Date().toISOString();
+          console.log('✅ Hosteller returning IN - setting IN time:', inTime);
+        }
+      } else {
+        console.log('Processing as DAY SCHOLAR');
+        // DayScholar logic: First scan = in, Second scan = out
+        if (!attendanceStatus.exists || !attendanceStatus.data) {
+          direction = "in";
+          reason = "Day scholar entry";
+          inTime = new Date().toLocaleTimeString('en-US', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          inTimestamp = new Date().toISOString();
+          console.log('✅ Day scholar entering IN - setting IN time:', inTime);
+        } else {
+          direction = "out";
+          reason = "Day scholar exit";
+          outTime = new Date().toLocaleTimeString('en-US', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+          });
+          outTimestamp = new Date().toISOString();
+          console.log('✅ Day scholar going OUT - setting OUT time:', outTime);
+        }
+      }
 
       // Create access log
       const accessLogData: AccessLog = {
@@ -374,33 +579,80 @@ const GateTerminal = () => {
         mode: student.mode,
         direction,
         timestamp: new Date().toISOString(),
-        status: approvedRequest ? "granted" : "denied",
-        reason: approvedRequest ? `Approved ${approvedRequest.type} request` : "No approved pass request",
-        passRequestId: approvedRequest?.id
+        status,
+        reason,
+        passRequestId: approvedRequest?.id,
+        outingApproved: !!approvedRequest,
+        outingRequestId: approvedRequest?.id
       };
 
       setAccessLog(accessLogData);
 
-      // Save to Firebase - Student logs by date and roll number
+      // Save to Firebase in the correct format
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      const studentRollNumber = student.id; // This should be the roll number
+      const logIndex = attendanceStatus.exists ? Object.keys(attendanceStatus.data).length : 0;
       
-      console.log('Saving student access log to Firebase:', accessLogData);
-      await set(ref(db, `Attendance_Log/${today}/${studentRollNumber}`), accessLogData);
-      console.log(`Student access log saved successfully to Firebase at Attendance_Log/${today}/${studentRollNumber}`);
+      const logData = {
+        department: student.department,
+        name: student.name,
+        username: student.id,
+        role: "student",
+        mode: student.mode,
+        ...(inTime && { in: inTime, in_timestamp: inTimestamp }),
+        ...(outTime && { out: outTime, out_timestamp: outTimestamp }),
+        ...(!outTime && { out: "inside" }),
+        created_at: new Date().toISOString()
+      };
+      
+      console.log('=== SAVING STUDENT LOG TO NEW ATTENDANCE COLLECTION ===');
+      console.log('Date:', today);
+      console.log('Student ID:', student.id);
+      console.log('Log Index:', logIndex);
+      console.log('Log Data:', logData);
+      console.log('Firebase Path:', `attendance/${today}/students/${student.id}/${logIndex}`);
+      
+      try {
+        await set(ref(db, `attendance/${today}/students/${student.id}/${logIndex}`), logData);
+        console.log('✅ Student access log saved successfully to NEW attendance collection!');
+        
+        // Verify the save by reading it back
+        const verifyRef = ref(db, `attendance/${today}/students/${student.id}/${logIndex}`);
+        const verifySnapshot = await get(verifyRef);
+        if (verifySnapshot.exists()) {
+          console.log('✅ Verification successful - data exists in NEW attendance collection');
+          console.log('Verified data:', verifySnapshot.val());
+        } else {
+          console.log('❌ Verification failed - data not found in NEW attendance collection');
+        }
+      } catch (firebaseError) {
+        console.error('❌ Firebase write error:', firebaseError);
+        console.error('Error details:', {
+          message: firebaseError.message,
+          code: firebaseError.code,
+          stack: firebaseError.stack
+        });
+        throw firebaseError;
+      }
 
-      if (approvedRequest) {
+      if (status === "granted") {
         setScanStatus("success");
         setMessage(`Access ${direction === "out" ? "granted" : "granted"} for ${student.name}`);
       } else {
         setScanStatus("denied");
-        setMessage(`Access denied. No approved pass request for ${student.name}`);
+        setMessage(`Access denied. ${reason}`);
       }
+      
+      console.log('=== STUDENT ACCESS HANDLING COMPLETE ===');
 
     } catch (error) {
-      console.error('Error checking pass approval:', error);
+      console.error('❌ Error handling student access:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       setScanStatus("denied");
-      setMessage("Error checking pass approval. Please try again.");
+      setMessage("Error processing student access. Please try again.");
     }
   };
 
@@ -456,6 +708,53 @@ const GateTerminal = () => {
       month: 'long',
       day: 'numeric'
     });
+  };
+
+  // Test Firebase write permissions
+  const testFirebaseWrite = async () => {
+    try {
+      console.log('=== TESTING FIREBASE WRITE PERMISSIONS ===');
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const testData = {
+        department: "TEST",
+        name: "Test User",
+        username: "test123",
+        role: "staff",
+        mode: "Staff",
+        in: new Date().toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit',
+          second: '2-digit'
+        }),
+        in_timestamp: new Date().toISOString(),
+        out: "inside",
+        created_at: new Date().toISOString(),
+        test: true,
+        message: "Firebase write test to attendance collection"
+      };
+      
+      const testRef = ref(db, `attendance/${today}/staff/test123/0`);
+      console.log('Attempting to write test data to NEW attendance collection...');
+      console.log('Test path:', `attendance/${today}/staff/test123/0`);
+      console.log('Test data:', testData);
+      
+      await set(testRef, testData);
+      console.log('✅ Firebase write test to attendance collection successful!');
+      
+      // Verify the write
+      const verifySnapshot = await get(testRef);
+      if (verifySnapshot.exists()) {
+        console.log('✅ Test data verified in attendance collection:', verifySnapshot.val());
+        setMessage("Firebase write test to attendance collection successful!");
+      } else {
+        console.log('❌ Test data not found in attendance collection');
+        setMessage("Firebase write test failed - data not found in attendance collection");
+      }
+    } catch (error) {
+      console.error('❌ Firebase write test failed:', error);
+      setMessage(`Firebase write test failed: ${error.message}`);
+    }
   };
 
   return (
@@ -596,6 +895,12 @@ const GateTerminal = () => {
                       {accessLog.direction === "out" ? "EXIT" : "ENTRY"}
                     </span>
                   </div>
+                  {accessLog.outingApproved && (
+                    <div className="flex items-center justify-center gap-2 mt-1">
+                      <AlertTriangle className="h-4 w-4 text-yellow-300" />
+                      <span className="text-yellow-300 text-sm">Outing Approved</span>
+                    </div>
+                  )}
                 </div>
                 <p className="text-white/80 text-sm mt-4">
                   {accessLog.reason} at {formatTime(currentTime)}
@@ -625,6 +930,26 @@ const GateTerminal = () => {
           </Card>
         )}
 
+        {/* Test Firebase Button */}
+        <Card className="bg-white/5 backdrop-blur-sm border-white/10">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-white font-semibold mb-2">Debug Tools:</h3>
+                <p className="text-white/80 text-sm">Test Firebase connection and permissions</p>
+              </div>
+              <Button 
+                onClick={testFirebaseWrite}
+                variant="outline"
+                size="sm"
+                className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+              >
+                Test Firebase Write
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Instructions */}
         <Card className="bg-white/5 backdrop-blur-sm border-white/10">
           <CardContent className="p-4">
@@ -636,6 +961,7 @@ const GateTerminal = () => {
               <li>• Face will be auto-captured when detected</li>
               <li>• Hosteller: First scan = Exit, Second scan = Entry</li>
               <li>• DayScholar: First scan = Entry, Second scan = Exit</li>
+              <li>• Staff: Alternating IN/OUT based on current status</li>
             </ul>
           </CardContent>
         </Card>

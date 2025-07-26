@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
-import { UserCircle, LogOut } from "lucide-react";
+import { UserCircle, LogOut, FileText, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../lib/firebase";
 import { ref, get, query, orderByChild, limitToLast } from "firebase/database";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const departments = [
   "AIML", "CYBER SECURITY", "AIDS", "IT", "ECE", "CSE", "EEE", "MECH", "CIVIL", "DCSE", "DECE", "DMECH"
@@ -356,76 +358,115 @@ export default function Management() {
   const todayStr = new Date().toISOString().slice(0, 10);
 
   // Fetch data from Firebase
-  useEffect(() => {
-    const fetchLogs = async () => {
-      setLoading(true);
-      try {
-        // Fetch from both student and staff collections
-        const studentLogsRef = ref(db, "Attendance_Log");
-        const staffLogsRef = ref(db, "Attendance_Log_staffs");
+  const fetchLogs = async () => {
+    setLoading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      console.log('Fetching logs for date:', today);
+      let allLogs: AccessLog[] = [];
+      
+      // Test Firebase connection first
+      console.log('Testing Firebase connection...');
+      const testRef = ref(db, 'students');
+      const testSnapshot = await get(testRef);
+      console.log('Firebase connection test result:', testSnapshot.exists() ? 'SUCCESS' : 'NO DATA');
+      
+      // Fetch from NEW attendance collection
+      const attendanceRef = ref(db, `attendance/${today}`);
+      console.log('Fetching from NEW attendance collection:', `attendance/${today}`);
+      const attendanceSnapshot = await get(attendanceRef);
+      
+      if (attendanceSnapshot.exists()) {
+        const attendanceData = attendanceSnapshot.val();
+        console.log('Attendance data found:', Object.keys(attendanceData));
         
-        const [studentSnapshot, staffSnapshot] = await Promise.all([
-          get(studentLogsRef),
-          get(staffLogsRef)
-        ]);
-        
-        let allLogs: AccessLog[] = [];
-        
-        // Process student logs (organized by date and roll number)
-        if (studentSnapshot.exists()) {
-          const studentLogsData = studentSnapshot.val();
-          // Iterate through dates
-          for (const [date, dateData] of Object.entries(studentLogsData)) {
-            // Iterate through roll numbers for each date
-            for (const [rollNumber, logData] of Object.entries(dateData as any)) {
-              const log = logData as AccessLog;
-              log.id = `${date}_${rollNumber}`; // Create unique ID
-              allLogs.push(log);
-            }
-          }
+        // Process staff logs
+        if (attendanceData.staff) {
+          console.log('Processing staff logs...');
+          Object.entries(attendanceData.staff).forEach(([staffId, staffLogs]: [string, any]) => {
+            Object.entries(staffLogs).forEach(([logIndex, logData]: [string, any]) => {
+              const log = logData as any;
+              
+              const accessLog: AccessLog = {
+                id: `${staffId}_${logIndex}`,
+                staffId: staffId,
+                name: log.name || "Unknown",
+                department: log.department || "Unknown",
+                mode: log.mode || "Staff",
+                role: "staff",
+                direction: log.out && log.out !== "inside" ? "out" : "in",
+                timestamp: log.in_timestamp || log.out_timestamp || log.created_at || new Date().toISOString(),
+                status: "granted",
+                reason: log.out && log.out !== "inside" ? "Staff exit" : "Staff entry"
+              };
+              
+              allLogs.push(accessLog);
+            });
+          });
         }
         
-        // Process staff logs (organized by date)
-        if (staffSnapshot.exists()) {
-          const staffLogsData = staffSnapshot.val();
-          // Iterate through dates
-          for (const [date, dateData] of Object.entries(staffLogsData)) {
-            // Iterate through staff logs for each date
-            for (const [logId, logData] of Object.entries(dateData as any)) {
-              const log = logData as AccessLog;
-              log.id = `${date}_${logId}`; // Create unique ID
-              allLogs.push(log);
-            }
-          }
+        // Process student logs
+        if (attendanceData.students) {
+          console.log('Processing student logs...');
+          Object.entries(attendanceData.students).forEach(([studentId, studentLogs]: [string, any]) => {
+            Object.entries(studentLogs).forEach(([logIndex, logData]: [string, any]) => {
+              const log = logData as any;
+              
+              const accessLog: AccessLog = {
+                id: `${studentId}_${logIndex}`,
+                studentId: studentId,
+                name: log.name || "Unknown",
+                department: log.department || "Unknown",
+                mode: log.mode || "Hosteller",
+                role: "student",
+                direction: log.out && log.out !== "inside" ? "out" : "in",
+                timestamp: log.in_timestamp || log.out_timestamp || log.created_at || new Date().toISOString(),
+                status: "granted",
+                reason: log.out && log.out !== "inside" ? "Student exit" : "Student entry"
+              };
+              
+              allLogs.push(accessLog);
+            });
+          });
         }
-        
-        // Sort by timestamp (newest first)
-        allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        
-        setAllLogs(allLogs);
-        
-        // Separate logs by type
-        const students = allLogs.filter(log => log.role === "student");
-        const staff = allLogs.filter(log => log.role === "staff");
-        
-        setStudentLogs(students);
-        setStaffLogs(staff);
-        
-        if (allLogs.length === 0) {
-          setAllLogs([]);
-          setStudentLogs([]);
-          setStaffLogs([]);
-        }
-      } catch (error) {
-        console.error('Error fetching logs:', error);
-        setAllLogs([]);
-        setStudentLogs([]);
-        setStaffLogs([]);
-      } finally {
-        setLoading(false);
+      } else {
+        console.log('No attendance data found for today in NEW collection');
       }
-    };
+      
+      // Sort by timestamp (newest first)
+      allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+      setAllLogs(allLogs);
+      
+      // Separate logs by type
+      const students = allLogs.filter(log => log.role === "student");
+      const staff = allLogs.filter(log => log.role === "staff");
+      
+      setStudentLogs(students);
+      setStaffLogs(staff);
+      
+      console.log('Successfully fetched logs from NEW attendance collection:', {
+        total: allLogs.length,
+        students: students.length,
+        staff: staff.length
+      });
+      
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      setAllLogs([]);
+      setStudentLogs([]);
+      setStaffLogs([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchLogs();
   }, []);
 
@@ -592,6 +633,71 @@ export default function Management() {
           onDownloadPDF={handleDownloadPDF}
           onWeekly={handleShowWeekly}
         />
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <Card className="bg-blue-50 border-blue-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-blue-600">All Logs</p>
+                  <p className="text-2xl font-bold text-blue-800">{allLogs.length}</p>
+                </div>
+                <FileText className="h-8 w-8 text-blue-600" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-green-50 border-green-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-green-600">Staff Logs</p>
+                  <p className="text-2xl font-bold text-green-800">{staffLogs.length}</p>
+                </div>
+                <User className="h-8 w-8 text-green-600" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-purple-50 border-purple-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-purple-600">Hostellers</p>
+                  <p className="text-2xl font-bold text-purple-800">
+                    {studentLogs.filter(log => log.mode === "Hosteller").length}
+                  </p>
+                </div>
+                <User className="h-8 w-8 text-purple-600" />
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="bg-orange-50 border-orange-200">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-orange-600">Day Scholars</p>
+                  <p className="text-2xl font-bold text-orange-800">
+                    {studentLogs.filter(log => log.mode === "DayScholar").length}
+                  </p>
+                </div>
+                <User className="h-8 w-8 text-orange-600" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Refresh Button */}
+        <div className="flex justify-end mb-4">
+          <Button 
+            onClick={fetchLogs} 
+            disabled={loading}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {loading ? "Refreshing..." : "Refresh Logs"}
+          </Button>
+        </div>
         <div ref={tableRef} className="print:bg-white">
           <AllLogsTable logs={filterLogs(allLogs)} />
         </div>

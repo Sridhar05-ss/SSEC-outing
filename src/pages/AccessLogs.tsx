@@ -23,7 +23,8 @@ import { ref, get, query, orderByChild, limitToLast } from "firebase/database";
 
 interface AccessLog {
   id: string;
-  studentId: string;
+  studentId?: string;
+  staffId?: string;
   name: string;
   department: string;
   mode: string;
@@ -32,6 +33,9 @@ interface AccessLog {
   status: "granted" | "denied";
   reason?: string;
   passRequestId?: string;
+  role?: "student" | "staff";
+  outingApproved?: boolean;
+  outingRequestId?: string;
 }
 
 const AccessLogs = () => {
@@ -47,53 +51,77 @@ const AccessLogs = () => {
     const fetchLogs = async () => {
       setLoading(true);
       try {
-                        // Fetch from both student and staff collections
-                const studentLogsRef = ref(db, "Attendance_Log");
-                const staffLogsRef = ref(db, "Attendance_Log_staffs");
-                
-                const [studentSnapshot, staffSnapshot] = await Promise.all([
-                  get(studentLogsRef),
-                  get(staffLogsRef)
-                ]);
-                
-                let allLogs: AccessLog[] = [];
-                
-                // Process student logs (organized by date and roll number)
-                if (studentSnapshot.exists()) {
-                  const studentLogsData = studentSnapshot.val();
-                  // Iterate through dates
-                  for (const [date, dateData] of Object.entries(studentLogsData)) {
-                    // Iterate through roll numbers for each date
-                    for (const [rollNumber, logData] of Object.entries(dateData as any)) {
-                      const log = logData as AccessLog;
-                      log.id = `${date}_${rollNumber}`; // Create unique ID
-                      allLogs.push(log);
-                    }
-                  }
-                }
-                
-                // Process staff logs (organized by date)
-                if (staffSnapshot.exists()) {
-                  const staffLogsData = staffSnapshot.val();
-                  // Iterate through dates
-                  for (const [date, dateData] of Object.entries(staffLogsData)) {
-                    // Iterate through staff logs for each date
-                    for (const [logId, logData] of Object.entries(dateData as any)) {
-                      const log = logData as AccessLog;
-                      log.id = `${date}_${logId}`; // Create unique ID
-                      allLogs.push(log);
-                    }
-                  }
-                }
-                
-                // Sort by timestamp (newest first)
-                allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-                
-                setLogs(allLogs);
+        const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+        let allLogs: AccessLog[] = [];
         
-        if (allLogs.length === 0) {
-          setLogs([]);
+        // Fetch from NEW attendance collection
+        const attendanceRef = ref(db, `attendance/${today}`);
+        console.log('Fetching from NEW attendance collection:', `attendance/${today}`);
+        const attendanceSnapshot = await get(attendanceRef);
+        
+        if (attendanceSnapshot.exists()) {
+          const attendanceData = attendanceSnapshot.val();
+          console.log('Attendance data found:', Object.keys(attendanceData));
+          
+          // Process staff logs
+          if (attendanceData.staff) {
+            console.log('Processing staff logs...');
+            Object.entries(attendanceData.staff).forEach(([staffId, staffLogs]: [string, any]) => {
+              Object.entries(staffLogs).forEach(([logIndex, logData]: [string, any]) => {
+                const log = logData as any;
+                
+                const accessLog: AccessLog = {
+                  id: `${staffId}_${logIndex}`,
+                  staffId: staffId,
+                  name: log.name || "Unknown",
+                  department: log.department || "Unknown",
+                  mode: log.mode || "Staff",
+                  role: "staff",
+                  direction: log.out && log.out !== "inside" ? "out" : "in",
+                  timestamp: log.in_timestamp || log.out_timestamp || log.created_at || new Date().toISOString(),
+                  status: "granted",
+                  reason: log.out && log.out !== "inside" ? "Staff exit" : "Staff entry"
+                };
+                
+                allLogs.push(accessLog);
+              });
+            });
+          }
+          
+          // Process student logs
+          if (attendanceData.students) {
+            console.log('Processing student logs...');
+            Object.entries(attendanceData.students).forEach(([studentId, studentLogs]: [string, any]) => {
+              Object.entries(studentLogs).forEach(([logIndex, logData]: [string, any]) => {
+                const log = logData as any;
+                
+                const accessLog: AccessLog = {
+                  id: `${studentId}_${logIndex}`,
+                  studentId: studentId,
+                  name: log.name || "Unknown",
+                  department: log.department || "Unknown",
+                  mode: log.mode || "Hosteller",
+                  role: "student",
+                  direction: log.out && log.out !== "inside" ? "out" : "in",
+                  timestamp: log.in_timestamp || log.out_timestamp || log.created_at || new Date().toISOString(),
+                  status: "granted",
+                  reason: log.out && log.out !== "inside" ? "Student exit" : "Student entry"
+                };
+                
+                allLogs.push(accessLog);
+              });
+            });
+          }
+        } else {
+          console.log('No attendance data found for today in NEW collection');
         }
+        
+        // Sort by timestamp (newest first)
+        allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        
+        setLogs(allLogs);
+        console.log('Successfully fetched access logs from NEW attendance collection:', allLogs.length);
+        
       } catch (error) {
         console.error('Error fetching logs:', error);
         setLogs([]);
