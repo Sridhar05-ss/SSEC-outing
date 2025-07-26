@@ -45,9 +45,10 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
     const loadModels = async () => {
       try {
         console.log('Loading face-api.js models...');
-        await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
-        await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
-        await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+        // Use CDN models instead of local files
+        await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
         setModelsLoaded(true);
         console.log('All face-api.js models loaded.');
       } catch (err) {

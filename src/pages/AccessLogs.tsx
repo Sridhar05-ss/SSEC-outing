@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,83 +12,113 @@ import {
   Clock,
   User,
   TrendingUp,
-  AlertTriangle
+  AlertTriangle,
+  LogIn,
+  LogOut,
+  CheckCircle,
+  XCircle
 } from "lucide-react";
+import { db } from "../lib/firebase";
+import { ref, get, query, orderByChild, limitToLast } from "firebase/database";
 
 interface AccessLog {
   id: string;
+  studentId: string;
   name: string;
-  userId: string;
   department: string;
-  role: string;
+  mode: string;
   direction: "in" | "out";
   timestamp: string;
   status: "granted" | "denied";
-  confidence: number;
+  reason?: string;
+  passRequestId?: string;
 }
 
 const AccessLogs = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
-  
-  // Mock log data
-  const [logs] = useState<AccessLog[]>([
-    {
-      id: "1",
-      name: "Dr. Rajesh Kumar",
-      userId: "ST001",
-      department: "Computer Science",
-      role: "Professor",
-      direction: "in",
-      timestamp: "2024-01-15T09:15:23",
-      status: "granted",
-      confidence: 98.7
-    },
-    {
-      id: "2",
-      name: "Priya Sharma",
-      userId: "20CS101",
-      department: "Computer Science",
-      role: "Student",
-      direction: "in",
-      timestamp: "2024-01-15T09:12:45",
-      status: "granted",
-      confidence: 95.3
-    },
-    {
-      id: "3",
-      name: "Unknown Person",
-      userId: "UNKNOWN",
-      department: "-",
-      role: "-",
-      direction: "in",
-      timestamp: "2024-01-15T09:10:12",
-      status: "denied",
-      confidence: 45.2
-    },
-    {
-      id: "4",
-      name: "Prof. Anita Singh",
-      userId: "ST002",
-      department: "Electronics",
-      role: "Associate Professor",
-      direction: "out",
-      timestamp: "2024-01-15T09:08:33",
-      status: "granted",
-      confidence: 97.1
-    },
-    {
-      id: "5",
-      name: "Rahul Patel",
-      userId: "20EC205",
-      department: "Electronics",
-      role: "Student",
-      direction: "in",
-      timestamp: "2024-01-15T09:05:18",
-      status: "granted",
-      confidence: 94.8
-    }
-  ]);
+  const [logs, setLogs] = useState<AccessLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "granted" | "denied">("all");
+  const [directionFilter, setDirectionFilter] = useState<"all" | "in" | "out">("all");
+
+  // Fetch access logs from Firebase
+  useEffect(() => {
+    const fetchLogs = async () => {
+      setLoading(true);
+      try {
+                        // Fetch from both student and staff collections
+                const studentLogsRef = ref(db, "Attendance_Log");
+                const staffLogsRef = ref(db, "Attendance_Log_staffs");
+                
+                const [studentSnapshot, staffSnapshot] = await Promise.all([
+                  get(studentLogsRef),
+                  get(staffLogsRef)
+                ]);
+                
+                let allLogs: AccessLog[] = [];
+                
+                // Process student logs (organized by date and roll number)
+                if (studentSnapshot.exists()) {
+                  const studentLogsData = studentSnapshot.val();
+                  // Iterate through dates
+                  for (const [date, dateData] of Object.entries(studentLogsData)) {
+                    // Iterate through roll numbers for each date
+                    for (const [rollNumber, logData] of Object.entries(dateData as any)) {
+                      const log = logData as AccessLog;
+                      log.id = `${date}_${rollNumber}`; // Create unique ID
+                      allLogs.push(log);
+                    }
+                  }
+                }
+                
+                // Process staff logs (organized by date)
+                if (staffSnapshot.exists()) {
+                  const staffLogsData = staffSnapshot.val();
+                  // Iterate through dates
+                  for (const [date, dateData] of Object.entries(staffLogsData)) {
+                    // Iterate through staff logs for each date
+                    for (const [logId, logData] of Object.entries(dateData as any)) {
+                      const log = logData as AccessLog;
+                      log.id = `${date}_${logId}`; // Create unique ID
+                      allLogs.push(log);
+                    }
+                  }
+                }
+                
+                // Sort by timestamp (newest first)
+                allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+                
+                setLogs(allLogs);
+        
+        if (allLogs.length === 0) {
+          setLogs([]);
+        }
+      } catch (error) {
+        console.error('Error fetching logs:', error);
+        setLogs([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, []);
+
+  // Filter logs based on search term, date, status, and direction
+  const filteredLogs = logs.filter((log) => {
+    const matchesSearch = log.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         log.studentId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         log.department.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesDate = !selectedDate || log.timestamp.startsWith(selectedDate);
+    
+    const matchesStatus = filter === "all" || log.status === filter;
+    
+    const matchesDirection = directionFilter === "all" || log.direction === directionFilter;
+    
+    return matchesSearch && matchesDate && matchesStatus && matchesDirection;
+  });
 
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleTimeString('en-US', { 
@@ -101,84 +131,126 @@ const AccessLogs = () => {
   const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString('en-US', { 
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
+      year: 'numeric'
     });
   };
 
-  const filteredLogs = logs.filter(log =>
-    log.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.userId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    log.department.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const formatDateTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
 
-  const todayEntries = logs.filter(log => log.direction === "in" && log.status === "granted").length;
-  const deniedAttempts = logs.filter(log => log.status === "denied").length;
-  const currentlyInside = logs.filter(log => {
-    const userLogs = logs.filter(l => l.userId === log.userId && l.status === "granted");
-    const lastEntry = userLogs[userLogs.length - 1];
-    return lastEntry?.direction === "in";
-  }).length;
+  const exportLogs = () => {
+    const csvContent = [
+      ['ID', 'Student ID', 'Name', 'Department', 'Mode', 'Direction', 'Status', 'Reason', 'Timestamp'],
+      ...filteredLogs.map(log => [
+        log.id,
+        log.studentId,
+        log.name,
+        log.department,
+        log.mode,
+        log.direction,
+        log.status,
+        log.reason || '',
+        formatDateTime(log.timestamp)
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `access-logs-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const getStatusColor = (status: string) => {
+    return status === "granted" ? "bg-green-500" : "bg-red-500";
+  };
+
+  const getDirectionIcon = (direction: string) => {
+    return direction === "in" ? <LogIn className="h-4 w-4" /> : <LogOut className="h-4 w-4" />;
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground">Access Logs</h1>
-          <p className="text-muted-foreground">Monitor and analyze gate access history</p>
+          <p className="text-muted-foreground">
+            Monitor and track all gate access activities
+          </p>
         </div>
-        <Button variant="hero">
-          <Download className="h-4 w-4" />
-          Export Logs
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={exportLogs}>
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="shadow-card">
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="h-8 w-8 text-primary" />
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-primary">{todayEntries}</p>
-                <p className="text-sm text-muted-foreground">Today's Entries</p>
+                <p className="text-sm text-muted-foreground">Total Logs</p>
+                <p className="text-2xl font-bold">{logs.length}</p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="shadow-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <User className="h-8 w-8 text-accent" />
-              <div>
-                <p className="text-2xl font-bold text-accent">{currentlyInside}</p>
-                <p className="text-sm text-muted-foreground">Currently Inside</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="shadow-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-8 w-8 text-destructive" />
-              <div>
-                <p className="text-2xl font-bold text-destructive">{deniedAttempts}</p>
-                <p className="text-sm text-muted-foreground">Denied Attempts</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card className="shadow-card">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
               <FileText className="h-8 w-8 text-primary" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-primary">{logs.length}</p>
-                <p className="text-sm text-muted-foreground">Total Records</p>
+                <p className="text-sm text-muted-foreground">Granted Access</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {logs.filter(log => log.status === "granted").length}
+                </p>
               </div>
+              <CheckCircle className="h-8 w-8 text-green-600" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Denied Access</p>
+                <p className="text-2xl font-bold text-red-600">
+                  {logs.filter(log => log.status === "denied").length}
+                </p>
+              </div>
+              <XCircle className="h-8 w-8 text-red-600" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Today's Activity</p>
+                <p className="text-2xl font-bold">
+                  {logs.filter(log => 
+                    log.timestamp.startsWith(new Date().toISOString().split('T')[0])
+                  ).length}
+                </p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-primary" />
             </div>
           </CardContent>
         </Card>
@@ -186,30 +258,61 @@ const AccessLogs = () => {
 
       {/* Filters */}
       <Card className="shadow-card">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by name, ID, or department..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filters
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Search</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search by name, ID, or department..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Date</label>
               <Input
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-40"
               />
             </div>
-            <Button variant="outline">
-              <Filter className="h-4 w-4" />
-              More Filters
-            </Button>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as "all" | "granted" | "denied")}
+                className="w-full p-2 border border-border rounded-md"
+              >
+                <option value="all">All Status</option>
+                <option value="granted">Granted</option>
+                <option value="denied">Denied</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Direction</label>
+              <select
+                value={directionFilter}
+                onChange={(e) => setDirectionFilter(e.target.value as "all" | "in" | "out")}
+                className="w-full p-2 border border-border rounded-md"
+              >
+                <option value="all">All Directions</option>
+                <option value="in">Entry</option>
+                <option value="out">Exit</option>
+              </select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -223,58 +326,69 @@ const AccessLogs = () => {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {filteredLogs.map((log) => (
-              <div
-                key={log.id}
-                className="flex items-center justify-between p-4 border border-border rounded-lg hover:shadow-card transition-smooth bg-card"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="flex flex-col items-center">
-                    <div className={`w-3 h-3 rounded-full ${
-                      log.status === "granted" ? "bg-primary" : "bg-destructive"
-                    }`}></div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {formatDate(log.timestamp)}
+          {loading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+              <p className="text-muted-foreground mt-2">Loading logs...</p>
+            </div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="text-center py-8">
+              <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">No access logs found</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between p-4 border border-border rounded-lg hover:shadow-card transition-smooth bg-card"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-3 h-3 rounded-full ${getStatusColor(log.status)}`}></div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {formatDate(log.timestamp)}
+                      </div>
+                    </div>
+                    
+                    <div className="w-12 h-12 bg-gradient-primary rounded-full flex items-center justify-center text-primary-foreground font-semibold text-sm">
+                      {log.name.charAt(0)}
+                    </div>
+                    
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-foreground">{log.name}</h3>
+                        <Badge variant={log.direction === "in" ? "default" : "secondary"}>
+                          <div className="flex items-center gap-1">
+                            {getDirectionIcon(log.direction)}
+                            {log.direction === "in" ? "Entry" : "Exit"}
+                          </div>
+                        </Badge>
+                        <Badge variant={log.status === "granted" ? "default" : "destructive"}>
+                          {log.status === "granted" ? "Granted" : "Denied"}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        ID: {log.studentId} • {log.department}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Mode: {log.mode} • {log.reason}
+                      </p>
                     </div>
                   </div>
                   
-                  <div className="w-12 h-12 bg-gradient-primary rounded-full flex items-center justify-center text-primary-foreground font-semibold text-sm">
-                    {log.status === "granted" ? log.name.charAt(0) : "?"}
-                  </div>
-                  
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-foreground">{log.name}</h3>
-                      <Badge variant={log.direction === "in" ? "default" : "secondary"}>
-                        {log.direction === "in" ? "Entry" : "Exit"}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      {log.userId} • {log.department}
-                    </p>
-                    <p className="text-sm text-muted-foreground">{log.role}</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">{formatTime(log.timestamp)}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      Confidence: {log.confidence}%
+                    <p className="text-sm font-medium text-foreground">
+                      {formatTime(log.timestamp)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(log.timestamp)}
                     </p>
                   </div>
-                  
-                  <Badge variant={log.status === "granted" ? "default" : "destructive"}>
-                    {log.status === "granted" ? "Granted" : "Denied"}
-                  </Badge>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

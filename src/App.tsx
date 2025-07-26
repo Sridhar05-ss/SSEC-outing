@@ -3,6 +3,8 @@ import Login from './pages/Login';
 import Admin from './pages/Admin';
 import Management from './pages/Management';
 import Gate from './pages/Gate';
+import GateTerminal from './pages/GateTerminal';
+import FaceTest from './pages/FaceTest';
 import { fakeAuth } from './lib/fakeAuth';
 import React from 'react';
 
@@ -25,6 +27,8 @@ function App() {
         <Route path="/admin" element={<RequireAuth role="admin"><Admin /></RequireAuth>} />
         <Route path="/management" element={<RequireAuth role="management"><Management /></RequireAuth>} />
         <Route path="/gate" element={<RequireAuth role="gate"><Gate /></RequireAuth>} />
+        <Route path="/gate-terminal" element={<RequireAuth role="gate"><GateTerminal /></RequireAuth>} />
+        <Route path="/face-test" element={<FaceTest />} />
         {/* Default route: redirect to login */}
         <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

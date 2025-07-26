@@ -1,27 +1,36 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { UserCircle, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { db } from "../lib/firebase";
+import { ref, get, query, orderByChild, limitToLast } from "firebase/database";
 
 const departments = [
   "AIML", "CYBER SECURITY", "AIDS", "IT", "ECE", "CSE", "EEE", "MECH", "CIVIL", "DCSE", "DECE", "DMECH"
 ];
 
-const demoAllLogs = [
-  { id: "S001", name: "Dr. Rajesh Kumar", dept: "CSE", in: "2024-06-01 08:10", out: "2024-06-01 16:30" },
-  { id: "STU001", name: "Priya Sharma", dept: "CSE", in: "2024-06-01 08:20", out: "2024-06-01 15:45" },
-];
-const demoStudentLogs = [
-  { id: "STU001", name: "Priya Sharma", year: "IV", dept: "CSE", in: "2024-06-01 08:20", out: "2024-06-01 15:45" },
-  { id: "STU002", name: "Rahul Patel", year: "III", dept: "CSE", in: "2024-06-01 08:25", out: "2024-06-01 15:50" },
-];
-const demoStaffLogs = [
-  { id: "S001", name: "Dr. Rajesh Kumar", dept: "CSE", in: "2024-06-01 08:10", out: "2024-06-01 16:30" },
-  { id: "S002", name: "Anita Singh", dept: "ECE", in: "2024-06-01 08:15", out: "2024-06-01 16:00" },
-];
-const demoVisitors = [
-  { name: "Visitor One", mobile: "9876543210", reason: "Meeting", timestamp: "2024-06-01 10:30" },
-  { name: "Visitor Two", mobile: "9123456780", reason: "Delivery", timestamp: "2024-06-01 11:15" },
-];
+// Interface for access logs from Firebase
+interface AccessLog {
+  id: string;
+  studentId?: string;
+  staffId?: string;
+  name: string;
+  department: string;
+  mode?: string; // "Hosteller" or "DayScholar" for students
+  role?: string; // "student" or "staff"
+  direction: "in" | "out";
+  timestamp: string;
+  status: "granted" | "denied";
+  reason?: string;
+  passRequestId?: string;
+}
+
+// Interface for visitor logs
+interface VisitorLog {
+  name: string;
+  mobile: string;
+  reason: string;
+  timestamp: string;
+}
 
 function Sidebar({ active, setActive, studentType, setStudentType }) {
   const navItems = [
@@ -116,6 +125,23 @@ function getStatusBadge(inTime, outTime) {
 }
 
 function AllLogsTable({ logs }) {
+  const formatTime = (timestamp) => {
+    if (!timestamp) return "-";
+    return new Date(timestamp).toLocaleTimeString('en-US', { 
+      hour12: true, 
+      hour: 'numeric', 
+      minute: '2-digit'
+    });
+  };
+
+  const formatDate = (timestamp) => {
+    if (!timestamp) return "-";
+    return new Date(timestamp).toLocaleDateString('en-US', { 
+      month: 'short',
+      day: 'numeric'
+    });
+  };
+
   return (
     <div className="w-[95%] mx-auto bg-white rounded-2xl shadow-lg p-4 overflow-y-auto max-h-[70vh] print:p-0 print:shadow-none print:bg-white">
       <table className="w-full text-left rounded text-sm table-fixed">
@@ -124,29 +150,46 @@ function AllLogsTable({ logs }) {
             <th className="py-3 px-6">ID</th>
             <th className="py-3 px-6">Name</th>
             <th className="py-3 px-6">Department</th>
-            <th className="py-3 px-6">IN</th>
-            <th className="py-3 px-6">OUT</th>
+            <th className="py-3 px-6">Role</th>
+            <th className="py-3 px-6">Direction</th>
+            <th className="py-3 px-6">Time</th>
             <th className="py-3 px-6">Status</th>
           </tr>
         </thead>
         <tbody>
           {logs.length === 0 ? (
-            <tr><td colSpan={6} className="py-6 text-center text-blue-700">No logs found.</td></tr>
+            <tr><td colSpan={7} className="py-6 text-center text-blue-700">No logs found.</td></tr>
           ) : (
             logs.map((log, i) => (
               <tr key={i} className={i % 2 === 0 ? "bg-blue-50 transition-all hover:bg-blue-100" : "bg-white transition-all hover:bg-blue-50"}>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.id}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.studentId || log.staffId || log.id}</td>
                 <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.name}</td>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[10rem]">{log.dept}</td>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.in}</td>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.out}</td>
-                <td className="py-3 px-6 text-center">{getStatusBadge(log.in, log.out)}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[10rem]">{log.department}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.role || "Unknown"}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">
+                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                    log.direction === "in" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}>
+                    {log.direction === "in" ? "Entry" : "Exit"}
+                  </span>
+                </td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">
+                  <div>{formatTime(log.timestamp)}</div>
+                  <div className="text-xs text-gray-500">{formatDate(log.timestamp)}</div>
+                </td>
+                <td className="py-3 px-6 text-center">
+                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                    log.status === "granted" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                  }`}>
+                    {log.status === "granted" ? "Granted" : "Denied"}
+                  </span>
+                </td>
               </tr>
             ))
           )}
         </tbody>
       </table>
-        </div>
+    </div>
   );
 }
 
@@ -301,29 +344,114 @@ export default function Management() {
   const [showWeekly, setShowWeekly] = useState(false);
   const [weeklyData, setWeeklyData] = useState([]);
   const weeklyRef = useRef(null);
+  
+  // State for real data from Firebase
+  const [allLogs, setAllLogs] = useState<AccessLog[]>([]);
+  const [studentLogs, setStudentLogs] = useState<AccessLog[]>([]);
+  const [staffLogs, setStaffLogs] = useState<AccessLog[]>([]);
+  const [visitorLogs, setVisitorLogs] = useState<VisitorLog[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Get today's date string (YYYY-MM-DD)
   const todayStr = new Date().toISOString().slice(0, 10);
 
+  // Fetch data from Firebase
+  useEffect(() => {
+    const fetchLogs = async () => {
+      setLoading(true);
+      try {
+        // Fetch from both student and staff collections
+        const studentLogsRef = ref(db, "Attendance_Log");
+        const staffLogsRef = ref(db, "Attendance_Log_staffs");
+        
+        const [studentSnapshot, staffSnapshot] = await Promise.all([
+          get(studentLogsRef),
+          get(staffLogsRef)
+        ]);
+        
+        let allLogs: AccessLog[] = [];
+        
+        // Process student logs (organized by date and roll number)
+        if (studentSnapshot.exists()) {
+          const studentLogsData = studentSnapshot.val();
+          // Iterate through dates
+          for (const [date, dateData] of Object.entries(studentLogsData)) {
+            // Iterate through roll numbers for each date
+            for (const [rollNumber, logData] of Object.entries(dateData as any)) {
+              const log = logData as AccessLog;
+              log.id = `${date}_${rollNumber}`; // Create unique ID
+              allLogs.push(log);
+            }
+          }
+        }
+        
+        // Process staff logs (organized by date)
+        if (staffSnapshot.exists()) {
+          const staffLogsData = staffSnapshot.val();
+          // Iterate through dates
+          for (const [date, dateData] of Object.entries(staffLogsData)) {
+            // Iterate through staff logs for each date
+            for (const [logId, logData] of Object.entries(dateData as any)) {
+              const log = logData as AccessLog;
+              log.id = `${date}_${logId}`; // Create unique ID
+              allLogs.push(log);
+            }
+          }
+        }
+        
+        // Sort by timestamp (newest first)
+        allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        
+        setAllLogs(allLogs);
+        
+        // Separate logs by type
+        const students = allLogs.filter(log => log.role === "student");
+        const staff = allLogs.filter(log => log.role === "staff");
+        
+        setStudentLogs(students);
+        setStaffLogs(staff);
+        
+        if (allLogs.length === 0) {
+          setAllLogs([]);
+          setStudentLogs([]);
+          setStaffLogs([]);
+        }
+      } catch (error) {
+        console.error('Error fetching logs:', error);
+        setAllLogs([]);
+        setStudentLogs([]);
+        setStaffLogs([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+  }, []);
+
   // Filter logs for today only
-  const filterToday = (logs) => logs.filter(log => log.in && log.in.startsWith(todayStr));
-  const todayStaffLogs = filterToday(demoStaffLogs);
+  const filterToday = (logs: AccessLog[]) => logs.filter(log => log.timestamp && log.timestamp.startsWith(todayStr));
+  const todayStaffLogs = filterToday(staffLogs);
 
   // Staff Logs Info Boxes
-  const totalEntries = todayStaffLogs.filter(log => log.in && !log.out).length + todayStaffLogs.filter(log => log.in && log.out).length;
-  const totalExits = todayStaffLogs.filter(log => log.in && log.out).length;
+  const totalEntries = todayStaffLogs.filter(log => log.direction === "in").length;
+  const totalExits = todayStaffLogs.filter(log => log.direction === "out").length;
   const currentlyInside = totalEntries - totalExits;
 
-  // Filtering logic (demo only)
-  const filterLogs = (logs) => {
+  // Filtering logic for real data
+  const filterLogs = (logs: AccessLog[]) => {
     return logs.filter(log =>
-      (!search || log.id.toLowerCase().includes(search.toLowerCase()) || (log.name && log.name.toLowerCase().includes(search.toLowerCase()))) &&
-      (!date || (log.in && log.in.startsWith(date)))
+      (!search || log.studentId?.toLowerCase().includes(search.toLowerCase()) || 
+       log.staffId?.toLowerCase().includes(search.toLowerCase()) || 
+       (log.name && log.name.toLowerCase().includes(search.toLowerCase()))) &&
+      (!date || (log.timestamp && log.timestamp.startsWith(date)))
     );
   };
 
   // Student Logs: Dayscholar/Hostel toggle and filter
-  const todayStudentLogs = filterToday(demoStudentLogs).filter(log => studentType === "dayscholar" ? log.type !== "hostel" : log.type === "hostel");
+  const todayStudentLogs = filterToday(studentLogs).filter(log => 
+    studentType === "dayscholar" ? log.mode === "DayScholar" : log.mode === "Hosteller"
+  );
 
   // Logout handler
   const handleLogout = () => {
@@ -442,10 +570,10 @@ export default function Management() {
   // Show weekly records modal
   const handleShowWeekly = () => {
     let data = [];
-    if (active === "all") data = filterWeek(demoAllLogs);
-    else if (active === "staff") data = filterWeek(demoStaffLogs);
-    else if (active === "student") data = filterWeek(demoStudentLogs);
-    else if (active === "visitors") data = filterWeek(demoVisitors, "timestamp");
+    if (active === "all") data = filterWeek(allLogs, "timestamp");
+    else if (active === "staff") data = filterWeek(staffLogs, "timestamp");
+    else if (active === "student") data = filterWeek(studentLogs, "timestamp");
+    else if (active === "visitors") data = filterWeek(visitorLogs, "timestamp");
     setWeeklyData(data);
     setShowWeekly(true);
   };
@@ -465,7 +593,7 @@ export default function Management() {
           onWeekly={handleShowWeekly}
         />
         <div ref={tableRef} className="print:bg-white">
-          <AllLogsTable logs={filterLogs(demoAllLogs)} />
+          <AllLogsTable logs={filterLogs(allLogs)} />
         </div>
       </>
     );
@@ -531,7 +659,7 @@ export default function Management() {
           onWeekly={handleShowWeekly}
         />
         <div ref={visitorsRef} className="print:bg-white">
-          <VisitorsTable visitors={filterVisitors(demoVisitors)} />
+          <VisitorsTable visitors={filterVisitors(visitorLogs)} />
         </div>
       </>
     );

@@ -63,9 +63,10 @@ const StaffDetails: React.FC = () => {
   useEffect(() => {
     const loadModels = async () => {
       try {
-        await faceapi.nets.tinyFaceDetector.loadFromUri('/models');
-        await faceapi.nets.faceLandmark68Net.loadFromUri('/models');
-        await faceapi.nets.faceRecognitionNet.loadFromUri('/models');
+        // Use CDN models instead of local files
+        await faceapi.nets.tinyFaceDetector.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
         setModelsLoaded(true);
       } catch (err) {
         setCameraError("Failed to load face recognition models.");
@@ -224,7 +225,7 @@ const StaffDetails: React.FC = () => {
               <tr><td colSpan={6} style={{padding: 24, textAlign: 'center'}}>Loading...</td></tr>
         ) : filteredStaff.length === 0 ? (
               <tr><td colSpan={6} style={{padding: 24, textAlign: 'center'}}>No staff found.</td></tr>
-            ) : (
+        ) : (
               filteredStaff.map((s, i) => (
                 <tr key={s.username || s.id} style={{background: i % 2 === 0 ? '#f1f5fb' : 'white'}}>
                   <td style={{padding: '10px 16px', fontFamily: 'monospace', fontWeight: 500, maxWidth: 120, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'}}>{s.username || s.id || ''}</td>
@@ -234,7 +235,7 @@ const StaffDetails: React.FC = () => {
                   <td style={{padding: '10px 16px', textAlign: 'center'}}>
                     {Array.isArray((s as any).faceDescriptor) ? (
                       <span style={{background: '#bbf7d0', color: '#15803d', padding: '4px 16px', borderRadius: 8, fontSize: 15, fontWeight: 500, display: 'inline-block'}}>✔ Captured</span>
-                    ) : (
+                ) : (
                       <span style={{background: '#fecaca', color: '#b91c1c', padding: '4px 16px', borderRadius: 8, fontSize: 15, fontWeight: 500, display: 'inline-block'}}>✖ Not Captured</span>
                 )}
               </td>
