@@ -191,7 +191,7 @@ const FaceTest: React.FC = () => {
     try {
       // Test against stored faces
       const studentsSnap = await get(ref(db, "students"));
-      const staffSnap = await get(ref(db, "staff"));
+      const staffSnap = await get(ref(db, "Attendance_Log_staffs"));
       
       let foundMatches = 0;
       let totalFaces = 0;

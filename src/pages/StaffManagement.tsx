@@ -48,7 +48,7 @@ const StaffManagement: React.FC = () => {
         ctx.drawImage(videoRef.current, 0, 0, 320, 240);
         const dataUrl = canvasRef.current.toDataURL('image/png');
         // Save to Firebase
-        await set(ref(db, `staff/${currentStaffId}/face`), dataUrl);
+        await set(ref(db, `Attendance_Log_staffs/${currentStaffId}/face`), dataUrl);
         alert('Face captured and saved!');
         closeCamera();
       }
@@ -62,7 +62,7 @@ const StaffManagement: React.FC = () => {
     }
     setLoading(true);
     try {
-      await set(ref(db, `staff/${staffId}`), {
+      await set(ref(db, `Attendance_Log_staffs/${staffId}`), {
         username: staffId,
         name,
         department,
@@ -84,7 +84,7 @@ const StaffManagement: React.FC = () => {
     }
     setLoading(true);
     try {
-      await remove(ref(db, `staff/${removeId}`));
+      await remove(ref(db, `Attendance_Log_staffs/${removeId}`));
       alert("Staff removed successfully!");
       setRemoveId("");
     } catch (err) {

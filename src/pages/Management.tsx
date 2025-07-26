@@ -26,6 +26,17 @@ interface AccessLog {
   passRequestId?: string;
 }
 
+// Interface for processed logs in AllLogsTable
+interface ProcessedLog {
+  id: string;
+  name: string;
+  department: string;
+  role?: string;
+  in: string | null;
+  out: string | null;
+  status: "granted" | "denied";
+}
+
 // Interface for visitor logs
 interface VisitorLog {
   name: string;
@@ -136,13 +147,31 @@ function AllLogsTable({ logs }) {
     });
   };
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return "-";
-    return new Date(timestamp).toLocaleDateString('en-US', { 
-      month: 'short',
-      day: 'numeric'
-    });
-  };
+  // Group logs by person to show IN/OUT times
+  const groupedLogs = logs.reduce((acc, log) => {
+    const personId = log.studentId || log.staffId || log.id;
+    if (!acc[personId]) {
+      acc[personId] = {
+        id: personId,
+        name: log.name,
+        department: log.department,
+        role: log.role,
+        in: null,
+        out: null,
+        status: log.status
+      };
+    }
+    
+    if (log.direction === "in") {
+      acc[personId].in = log.timestamp;
+    } else if (log.direction === "out") {
+      acc[personId].out = log.timestamp;
+    }
+    
+    return acc;
+  }, {} as Record<string, ProcessedLog>);
+
+  const processedLogs: ProcessedLog[] = Object.values(groupedLogs);
 
   return (
     <div className="w-[95%] mx-auto bg-white rounded-2xl shadow-lg p-4 overflow-y-auto max-h-[70vh] print:p-0 print:shadow-none print:bg-white">
@@ -152,38 +181,27 @@ function AllLogsTable({ logs }) {
             <th className="py-3 px-6">ID</th>
             <th className="py-3 px-6">Name</th>
             <th className="py-3 px-6">Department</th>
-            <th className="py-3 px-6">Role</th>
-            <th className="py-3 px-6">Direction</th>
-            <th className="py-3 px-6">Time</th>
+            <th className="py-3 px-6">IN</th>
+            <th className="py-3 px-6">OUT</th>
             <th className="py-3 px-6">Status</th>
           </tr>
         </thead>
         <tbody>
-          {logs.length === 0 ? (
-            <tr><td colSpan={7} className="py-6 text-center text-blue-700">No logs found.</td></tr>
+          {processedLogs.length === 0 ? (
+            <tr><td colSpan={6} className="py-6 text-center text-blue-700">No logs found.</td></tr>
           ) : (
-            logs.map((log, i) => (
+            processedLogs.map((log, i) => (
               <tr key={i} className={i % 2 === 0 ? "bg-blue-50 transition-all hover:bg-blue-100" : "bg-white transition-all hover:bg-blue-50"}>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.studentId || log.staffId || log.id}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.id}</td>
                 <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.name}</td>
                 <td className="py-3 px-6 text-center break-words truncate max-w-[10rem]">{log.department}</td>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.role || "Unknown"}</td>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">
-                  <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    log.direction === "in" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
-                  }`}>
-                    {log.direction === "in" ? "Entry" : "Exit"}
-                  </span>
-                </td>
-                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">
-                  <div>{formatTime(log.timestamp)}</div>
-                  <div className="text-xs text-gray-500">{formatDate(log.timestamp)}</div>
-                </td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{formatTime(log.in)}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{formatTime(log.out)}</td>
                 <td className="py-3 px-6 text-center">
                   <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                    log.status === "granted" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                    log.out ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
                   }`}>
-                    {log.status === "granted" ? "Granted" : "Denied"}
+                    {log.out ? "OUT" : "IN"}
                   </span>
                 </td>
               </tr>
@@ -371,67 +389,38 @@ export default function Management() {
       const testSnapshot = await get(testRef);
       console.log('Firebase connection test result:', testSnapshot.exists() ? 'SUCCESS' : 'NO DATA');
       
-      // Fetch from NEW attendance collection
-      const attendanceRef = ref(db, `attendance/${today}`);
-      console.log('Fetching from NEW attendance collection:', `attendance/${today}`);
+              // Fetch from new_attend collection
+        const attendanceRef = ref(db, `new_attend/${today}`);
+        console.log('Fetching from new_attend collection:', `new_attend/${today}`);
       const attendanceSnapshot = await get(attendanceRef);
       
-      if (attendanceSnapshot.exists()) {
-        const attendanceData = attendanceSnapshot.val();
-        console.log('Attendance data found:', Object.keys(attendanceData));
-        
-        // Process staff logs
-        if (attendanceData.staff) {
-          console.log('Processing staff logs...');
-          Object.entries(attendanceData.staff).forEach(([staffId, staffLogs]: [string, any]) => {
-            Object.entries(staffLogs).forEach(([logIndex, logData]: [string, any]) => {
-              const log = logData as any;
-              
-              const accessLog: AccessLog = {
-                id: `${staffId}_${logIndex}`,
-                staffId: staffId,
-                name: log.name || "Unknown",
-                department: log.department || "Unknown",
-                mode: log.mode || "Staff",
-                role: "staff",
-                direction: log.out && log.out !== "inside" ? "out" : "in",
-                timestamp: log.in_timestamp || log.out_timestamp || log.created_at || new Date().toISOString(),
-                status: "granted",
-                reason: log.out && log.out !== "inside" ? "Staff exit" : "Staff entry"
-              };
-              
-              allLogs.push(accessLog);
-            });
+              if (attendanceSnapshot.exists()) {
+          const attendanceData = attendanceSnapshot.val();
+          console.log('Attendance data found:', Object.keys(attendanceData));
+          
+          // Process all attendance records
+          Object.entries(attendanceData).forEach(([personId, personData]: [string, any]) => {
+            const log = personData as any;
+            
+            const accessLog: AccessLog = {
+              id: personId,
+              studentId: personId,
+              staffId: personId,
+              name: log.name || "Unknown",
+              department: log.department || "Unknown",
+              mode: log.mode || "Unknown",
+              role: "student", // Default to student, can be updated based on your logic
+              direction: log.out ? "out" : "in",
+              timestamp: log.in || log.out || new Date().toISOString(),
+              status: "granted",
+              reason: log.out ? "Exit" : "Entry"
+            };
+            
+            allLogs.push(accessLog);
           });
+        } else {
+          console.log('No attendance data found for today in new_attend collection');
         }
-        
-        // Process student logs
-        if (attendanceData.students) {
-          console.log('Processing student logs...');
-          Object.entries(attendanceData.students).forEach(([studentId, studentLogs]: [string, any]) => {
-            Object.entries(studentLogs).forEach(([logIndex, logData]: [string, any]) => {
-              const log = logData as any;
-              
-              const accessLog: AccessLog = {
-                id: `${studentId}_${logIndex}`,
-                studentId: studentId,
-                name: log.name || "Unknown",
-                department: log.department || "Unknown",
-                mode: log.mode || "Hosteller",
-                role: "student",
-                direction: log.out && log.out !== "inside" ? "out" : "in",
-                timestamp: log.in_timestamp || log.out_timestamp || log.created_at || new Date().toISOString(),
-                status: "granted",
-                reason: log.out && log.out !== "inside" ? "Student exit" : "Student entry"
-              };
-              
-              allLogs.push(accessLog);
-            });
-          });
-        }
-      } else {
-        console.log('No attendance data found for today in NEW collection');
-      }
       
       // Sort by timestamp (newest first)
       allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -445,7 +434,7 @@ export default function Management() {
       setStudentLogs(students);
       setStaffLogs(staff);
       
-      console.log('Successfully fetched logs from NEW attendance collection:', {
+      console.log('Successfully fetched logs from new_attend collection:', {
         total: allLogs.length,
         students: students.length,
         staff: staff.length

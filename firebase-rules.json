@@ -1,0 +1,24 @@
+{
+  "rules": {
+    "Attendance_Log": {
+      ".read": true,
+      ".write": true
+    },
+    "Attendance_Log_staffs": {
+      ".read": true,
+      ".write": true
+    },
+    "students": {
+      ".read": true,
+      ".write": true
+    },
+    "staff": {
+      ".read": true,
+      ".write": true
+    },
+    "new_attendance_logs": {
+      ".read": true,
+      ".write": true
+    }
+  }
+} 

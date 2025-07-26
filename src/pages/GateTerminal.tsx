@@ -68,6 +68,16 @@ interface AccessLog {
 }
 
 const GateTerminal = () => {
+  console.log('🎯 GATE TERMINAL COMPONENT LOADED');
+  console.log('🔧 DEBUG: Component is running');
+  console.log('🔧 DEBUG: Current time:', new Date().toISOString());
+  
+  // Add a simple alert to test if the component loads
+  useEffect(() => {
+    console.log('🔧 DEBUG: useEffect triggered');
+    alert('GateTerminal component loaded! Check console for logs.');
+  }, []);
+  
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scanStatus, setScanStatus] = useState<ScanStatus>("idle");
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
@@ -152,20 +162,14 @@ const GateTerminal = () => {
   const getCurrentAttendanceStatus = async (personId: string, role: string) => {
     try {
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      let collectionPath = "";
-      
-      if (role === "staff") {
-        collectionPath = `attendance/${today}/staff/${personId}`;
-      } else {
-        collectionPath = `attendance/${today}/students/${personId}`;
-      }
+      const collectionPath = `new_attend/${today}/${personId}`;
       
       console.log('Checking attendance status at path:', collectionPath);
       const snapshot = await get(ref(db, collectionPath));
       const result = { 
         exists: snapshot.exists(), 
         data: snapshot.exists() ? snapshot.val() : null,
-        collection: role === "staff" ? "staff" : "student"
+        collection: "new_attend"
       };
       console.log('Attendance status result:', result);
       return result;
@@ -177,7 +181,11 @@ const GateTerminal = () => {
 
   // Auto-capture function
   const startAutoCapture = () => {
-    if (!modelsLoaded || !videoRef.current || !canvasRef.current) return;
+    console.log('📷 AUTO-CAPTURE STARTED');
+    if (!modelsLoaded || !videoRef.current || !canvasRef.current) {
+      console.log('❌ Auto-capture failed: models or video not ready');
+      return;
+    }
 
     const interval = setInterval(async () => {
       try {
@@ -196,15 +204,20 @@ const GateTerminal = () => {
         ).withFaceLandmarks().withFaceDescriptor();
 
         if (detection) {
+          console.log('👤 FACE DETECTED - Count:', faceDetectionCount + 1);
           setFaceDetectionCount(prev => prev + 1);
           
           // If face detected for 3 consecutive frames, trigger recognition
           if (faceDetectionCount >= 2) {
+            console.log('🎯 TRIGGERING FACE RECOGNITION');
             clearInterval(interval);
             setAutoCaptureInterval(null);
             await performFaceRecognition(dataUrl);
           }
         } else {
+          if (faceDetectionCount > 0) {
+            console.log('❌ FACE LOST - Resetting count');
+          }
           setFaceDetectionCount(0);
         }
       } catch (error) {
@@ -217,6 +230,7 @@ const GateTerminal = () => {
 
   // Face recognition function
   const performFaceRecognition = async (capturedDataUrl: string) => {
+    console.log('🔍 FACE RECOGNITION STARTED');
     setScanStatus("processing");
     setMessage("Processing face recognition...");
 
@@ -239,7 +253,7 @@ const GateTerminal = () => {
       let minDistance = 0.6; // Threshold for face recognition
 
       // 2. First check staff
-      const staffSnap = await get(ref(db, "staff"));
+      const staffSnap = await get(ref(db, "Attendance_Log_staffs"));
       if (staffSnap.exists()) {
         const staff = staffSnap.val();
         for (const [staffId, staffMember] of Object.entries(staff as Record<string, any>)) {
@@ -333,57 +347,6 @@ const GateTerminal = () => {
       console.log('=== STAFF ACCESS HANDLING START ===');
       console.log('Staff details:', staff);
       
-      // Get current attendance status
-      const attendanceStatus = await getCurrentAttendanceStatus(staff.id, "staff");
-      console.log('Current attendance status:', attendanceStatus);
-      
-      // Determine direction based on current status
-      let direction: "in" | "out";
-      let inTime = "";
-      let outTime = "";
-      let inTimestamp = "";
-      let outTimestamp = "";
-      
-      if (!attendanceStatus.exists || !attendanceStatus.data) {
-        // First entry of the day
-        direction = "in";
-        inTime = new Date().toLocaleTimeString('en-US', { 
-          hour12: false, 
-          hour: '2-digit', 
-          minute: '2-digit',
-          second: '2-digit'
-        });
-        inTimestamp = new Date().toISOString();
-        console.log('First entry - setting IN time:', inTime);
-      } else {
-        // Check if they have an out time
-        const existingData = attendanceStatus.data;
-        console.log('Existing data:', existingData);
-        if (!existingData.out || existingData.out === "inside") {
-          // They're going out
-          direction = "out";
-          outTime = new Date().toLocaleTimeString('en-US', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          outTimestamp = new Date().toISOString();
-          console.log('Going OUT - setting OUT time:', outTime);
-        } else {
-          // They're coming back in
-          direction = "in";
-          inTime = new Date().toLocaleTimeString('en-US', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          inTimestamp = new Date().toISOString();
-          console.log('Coming back IN - setting IN time:', inTime);
-        }
-      }
-
       // Create access log for staff
       const accessLogData: AccessLog = {
         id: Date.now().toString(),
@@ -391,7 +354,7 @@ const GateTerminal = () => {
         name: staff.name,
         department: staff.department,
         mode: "Staff",
-        direction,
+        direction: "in",
         timestamp: new Date().toISOString(),
         status: "granted",
         reason: "Staff access granted"
@@ -399,54 +362,75 @@ const GateTerminal = () => {
 
       setAccessLog(accessLogData);
 
-      // Save to NEW attendance collection
+      // Save to new_attend collection
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      const logIndex = attendanceStatus.exists ? Object.keys(attendanceStatus.data).length : 0;
-      
-      const logData = {
-        department: staff.department,
-        name: staff.name,
-        username: staff.id,
-        role: "staff",
-        mode: "Staff",
-        ...(inTime && { in: inTime, in_timestamp: inTimestamp }),
-        ...(outTime && { out: outTime, out_timestamp: outTimestamp }),
-        ...(!outTime && { out: "inside" }),
-        created_at: new Date().toISOString()
-      };
-
-      console.log('=== SAVING STAFF LOG TO NEW ATTENDANCE COLLECTION ===');
-      console.log('Date:', today);
+      const attendRef = ref(db, `new_attend/${today}/${staff.id}`);
+      console.log('=== SAVING STAFF TO NEW_ATTEND COLLECTION ===');
+      console.log('Path:', `new_attend/${today}/${staff.id}`);
       console.log('Staff ID:', staff.id);
-      console.log('Log Index:', logIndex);
-      console.log('Log Data:', logData);
-      console.log('Firebase Path:', `attendance/${today}/staff/${staff.id}/${logIndex}`);
+      console.log('Staff Name:', staff.name);
       
-      try {
-        await set(ref(db, `attendance/${today}/staff/${staff.id}/${logIndex}`), logData);
-        console.log('✅ Staff access log saved successfully to NEW attendance collection!');
+      const attendSnap = await get(attendRef);
+      console.log('Existing data check:', attendSnap.exists() ? 'EXISTS' : 'NOT EXISTS');
+      
+      let inTime = "";
+      let outTime = "";
+      let status = "IN";
+      
+      if (!attendSnap.exists() || !attendSnap.val().in) {
+        // First scan, set IN
+        inTime = new Date().toISOString();
+        const dataToSave = {
+          id: staff.id,
+          name: staff.name,
+          department: staff.department,
+          in: inTime,
+          out: "",
+          status: "IN"
+        };
+        console.log('Saving first scan data:', dataToSave);
         
-        // Verify the save by reading it back
-        const verifyRef = ref(db, `attendance/${today}/staff/${staff.id}/${logIndex}`);
-        const verifySnapshot = await get(verifyRef);
-        if (verifySnapshot.exists()) {
-          console.log('✅ Verification successful - data exists in NEW attendance collection');
-          console.log('Verified data:', verifySnapshot.val());
-        } else {
-          console.log('❌ Verification failed - data not found in NEW attendance collection');
+        try {
+          await set(attendRef, dataToSave);
+          console.log('✅ Successfully saved staff to new_attend collection');
+          
+          // Verify the save
+          const verifySnap = await get(attendRef);
+          if (verifySnap.exists()) {
+            console.log('✅ Staff verification successful:', verifySnap.val());
+          } else {
+            console.log('❌ Staff verification failed - data not found');
+          }
+        } catch (error) {
+          console.error('❌ Error saving staff to new_attend:', error);
+          throw error;
         }
-      } catch (firebaseError) {
-        console.error('❌ Firebase write error:', firebaseError);
-        console.error('Error details:', {
-          message: firebaseError.message,
-          code: firebaseError.code,
-          stack: firebaseError.stack
-        });
-        throw firebaseError;
+        status = "IN";
+      } else if (attendSnap.exists() && !attendSnap.val().out) {
+        // Second scan, set OUT
+        inTime = attendSnap.val().in;
+        outTime = new Date().toISOString();
+        const dataToSave = {
+          id: staff.id,
+          name: staff.name,
+          department: staff.department,
+          in: inTime,
+          out: outTime,
+          status: "OUT"
+        };
+        console.log('Saving second scan data:', dataToSave);
+        
+        try {
+          await set(attendRef, dataToSave);
+          console.log('✅ Successfully updated staff in new_attend collection');
+        } catch (error) {
+          console.error('❌ Error updating staff in new_attend:', error);
+          throw error;
+        }
+        status = "OUT";
       }
-
       setScanStatus("success");
-      setMessage(`Staff ${direction === "out" ? "exit" : "entry"} recorded for ${staff.name}`);
+      setMessage(`Staff ${status === "OUT" ? "exit" : "entry"} recorded for ${staff.name}`);
       console.log('=== STAFF ACCESS HANDLING COMPLETE ===');
 
     } catch (error) {
@@ -501,75 +485,6 @@ const GateTerminal = () => {
         }
       }
 
-      // Determine direction based on student mode and current status
-      let direction: "in" | "out";
-      let status: "granted" | "denied" = "granted";
-      let reason = "";
-      let inTime = "";
-      let outTime = "";
-      let inTimestamp = "";
-      let outTimestamp = "";
-
-      if (student.mode === "Hosteller") {
-        console.log('Processing as HOSTELLER');
-        // Hosteller logic: First scan = out, Second scan = in
-        if (!attendanceStatus.exists || !attendanceStatus.data) {
-          direction = "out";
-          if (!approvedRequest) {
-            status = "denied";
-            reason = "No approved outing request";
-            console.log('❌ Access denied - no approved outing request');
-          } else {
-            reason = `Approved ${approvedRequest.type} request`;
-            outTime = new Date().toLocaleTimeString('en-US', { 
-              hour12: false, 
-              hour: '2-digit', 
-              minute: '2-digit',
-              second: '2-digit'
-            });
-            outTimestamp = new Date().toISOString();
-            console.log('✅ Hosteller going OUT - setting OUT time:', outTime);
-          }
-        } else {
-          direction = "in";
-          reason = "Returning to hostel";
-          inTime = new Date().toLocaleTimeString('en-US', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          inTimestamp = new Date().toISOString();
-          console.log('✅ Hosteller returning IN - setting IN time:', inTime);
-        }
-      } else {
-        console.log('Processing as DAY SCHOLAR');
-        // DayScholar logic: First scan = in, Second scan = out
-        if (!attendanceStatus.exists || !attendanceStatus.data) {
-          direction = "in";
-          reason = "Day scholar entry";
-          inTime = new Date().toLocaleTimeString('en-US', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          inTimestamp = new Date().toISOString();
-          console.log('✅ Day scholar entering IN - setting IN time:', inTime);
-        } else {
-          direction = "out";
-          reason = "Day scholar exit";
-          outTime = new Date().toLocaleTimeString('en-US', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit',
-            second: '2-digit'
-          });
-          outTimestamp = new Date().toISOString();
-          console.log('✅ Day scholar going OUT - setting OUT time:', outTime);
-        }
-      }
-
       // Create access log
       const accessLogData: AccessLog = {
         id: Date.now().toString(),
@@ -577,10 +492,10 @@ const GateTerminal = () => {
         name: student.name,
         department: student.department,
         mode: student.mode,
-        direction,
+        direction: "in",
         timestamp: new Date().toISOString(),
-        status,
-        reason,
+        status: "granted",
+        reason: "Student access",
         passRequestId: approvedRequest?.id,
         outingApproved: !!approvedRequest,
         outingRequestId: approvedRequest?.id
@@ -588,59 +503,75 @@ const GateTerminal = () => {
 
       setAccessLog(accessLogData);
 
-      // Save to Firebase in the correct format
+      // Save to new_attend collection
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      const logIndex = attendanceStatus.exists ? Object.keys(attendanceStatus.data).length : 0;
-      
-      const logData = {
-        department: student.department,
-        name: student.name,
-        username: student.id,
-        role: "student",
-        mode: student.mode,
-        ...(inTime && { in: inTime, in_timestamp: inTimestamp }),
-        ...(outTime && { out: outTime, out_timestamp: outTimestamp }),
-        ...(!outTime && { out: "inside" }),
-        created_at: new Date().toISOString()
-      };
-      
-      console.log('=== SAVING STUDENT LOG TO NEW ATTENDANCE COLLECTION ===');
-      console.log('Date:', today);
+      const attendRef = ref(db, `new_attend/${today}/${student.id}`);
+      console.log('=== SAVING TO NEW_ATTEND COLLECTION ===');
+      console.log('Path:', `new_attend/${today}/${student.id}`);
       console.log('Student ID:', student.id);
-      console.log('Log Index:', logIndex);
-      console.log('Log Data:', logData);
-      console.log('Firebase Path:', `attendance/${today}/students/${student.id}/${logIndex}`);
+      console.log('Student Name:', student.name);
       
-      try {
-        await set(ref(db, `attendance/${today}/students/${student.id}/${logIndex}`), logData);
-        console.log('✅ Student access log saved successfully to NEW attendance collection!');
+      const attendSnap = await get(attendRef);
+      console.log('Existing data check:', attendSnap.exists() ? 'EXISTS' : 'NOT EXISTS');
+      
+      let inTime = "";
+      let outTime = "";
+      let status: string = "IN";
+      
+      if (!attendSnap.exists() || !attendSnap.val().in) {
+        // First scan, set IN
+        inTime = new Date().toISOString();
+        const dataToSave = {
+          id: student.id,
+          name: student.name,
+          department: student.department,
+          in: inTime,
+          out: "",
+          status: "IN"
+        };
+        console.log('Saving first scan data:', dataToSave);
         
-        // Verify the save by reading it back
-        const verifyRef = ref(db, `attendance/${today}/students/${student.id}/${logIndex}`);
-        const verifySnapshot = await get(verifyRef);
-        if (verifySnapshot.exists()) {
-          console.log('✅ Verification successful - data exists in NEW attendance collection');
-          console.log('Verified data:', verifySnapshot.val());
-        } else {
-          console.log('❌ Verification failed - data not found in NEW attendance collection');
+        try {
+          await set(attendRef, dataToSave);
+          console.log('✅ Successfully saved to new_attend collection');
+          
+          // Verify the save
+          const verifySnap = await get(attendRef);
+          if (verifySnap.exists()) {
+            console.log('✅ Verification successful:', verifySnap.val());
+          } else {
+            console.log('❌ Verification failed - data not found');
+          }
+        } catch (error) {
+          console.error('❌ Error saving to new_attend:', error);
+          throw error;
         }
-      } catch (firebaseError) {
-        console.error('❌ Firebase write error:', firebaseError);
-        console.error('Error details:', {
-          message: firebaseError.message,
-          code: firebaseError.code,
-          stack: firebaseError.stack
-        });
-        throw firebaseError;
+        status = "IN";
+      } else if (attendSnap.exists() && !attendSnap.val().out) {
+        // Second scan, set OUT
+        inTime = attendSnap.val().in;
+        outTime = new Date().toISOString();
+        const dataToSave = {
+          id: student.id,
+          name: student.name,
+          department: student.department,
+          in: inTime,
+          out: outTime,
+          status: "OUT"
+        };
+        console.log('Saving second scan data:', dataToSave);
+        
+        try {
+          await set(attendRef, dataToSave);
+          console.log('✅ Successfully updated new_attend collection');
+        } catch (error) {
+          console.error('❌ Error updating new_attend:', error);
+          throw error;
+        }
+        status = "OUT";
       }
-
-      if (status === "granted") {
-        setScanStatus("success");
-        setMessage(`Access ${direction === "out" ? "granted" : "granted"} for ${student.name}`);
-      } else {
-        setScanStatus("denied");
-        setMessage(`Access denied. ${reason}`);
-      }
+      setScanStatus("success");
+      setMessage(`Student ${status === "OUT" ? "exit" : "entry"} recorded for ${student.name}`);
       
       console.log('=== STUDENT ACCESS HANDLING COMPLETE ===');
 
@@ -657,6 +588,7 @@ const GateTerminal = () => {
   };
 
   const handleStartScan = async () => {
+    console.log('🚀 START SCAN BUTTON CLICKED');
     // Clear all temporary data
     setRecognitionResult(null);
     setAccessLog(null);
@@ -734,22 +666,22 @@ const GateTerminal = () => {
         message: "Firebase write test to attendance collection"
       };
       
-      const testRef = ref(db, `attendance/${today}/staff/test123/0`);
-      console.log('Attempting to write test data to NEW attendance collection...');
-      console.log('Test path:', `attendance/${today}/staff/test123/0`);
+      const testRef = ref(db, `new_attendance_logs/${today}/staff/test123/0`);
+      console.log('Attempting to write test data to new_attendance_logs collection...');
+      console.log('Test path:', `new_attendance_logs/${today}/staff/test123/0`);
       console.log('Test data:', testData);
       
       await set(testRef, testData);
-      console.log('✅ Firebase write test to attendance collection successful!');
+      console.log('✅ Firebase write test to new_attendance_logs collection successful!');
       
       // Verify the write
       const verifySnapshot = await get(testRef);
       if (verifySnapshot.exists()) {
-        console.log('✅ Test data verified in attendance collection:', verifySnapshot.val());
-        setMessage("Firebase write test to attendance collection successful!");
+        console.log('✅ Test data verified in new_attendance_logs collection:', verifySnapshot.val());
+        setMessage("Firebase write test to new_attendance_logs collection successful!");
       } else {
-        console.log('❌ Test data not found in attendance collection');
-        setMessage("Firebase write test failed - data not found in attendance collection");
+        console.log('❌ Test data not found in new_attendance_logs collection');
+        setMessage("Firebase write test failed - data not found in new_attendance_logs collection");
       }
     } catch (error) {
       console.error('❌ Firebase write test failed:', error);
@@ -759,6 +691,9 @@ const GateTerminal = () => {
 
   return (
     <div className="min-h-screen bg-gradient-gate text-gate-foreground p-4">
+      <div style={{ background: 'yellow', color: 'black', fontWeight: 'bold', fontSize: 24, textAlign: 'center', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+        Hello from Gate Terminal!
+      </div>
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="text-center space-y-2">
@@ -938,14 +873,24 @@ const GateTerminal = () => {
                 <h3 className="text-white font-semibold mb-2">Debug Tools:</h3>
                 <p className="text-white/80 text-sm">Test Firebase connection and permissions</p>
               </div>
-              <Button 
-                onClick={testFirebaseWrite}
-                variant="outline"
-                size="sm"
-                className="bg-white/10 text-white border-white/20 hover:bg-white/20"
-              >
-                Test Firebase Write
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={() => console.log('🧪 TEST BUTTON CLICKED')}
+                  variant="outline"
+                  size="sm"
+                  className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+                >
+                  Test Console
+                </Button>
+                <Button 
+                  onClick={testFirebaseWrite}
+                  variant="outline"
+                  size="sm"
+                  className="bg-white/10 text-white border-white/20 hover:bg-white/20"
+                >
+                  Test Firebase Write
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
