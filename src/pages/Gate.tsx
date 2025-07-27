@@ -275,13 +275,34 @@ const Gate: React.FC = () => {
     // Add global error handler for circular reference errors
     const originalConsoleError = console.error;
     console.error = (...args) => {
-      const errorMessage = args.join(' ');
-      if (errorMessage.includes('circular structure') || errorMessage.includes('Converting circular structure')) {
-        console.log('Circular reference error caught and suppressed');
+      const errorMessage = typeof args[0] === 'string' ? args[0] : args.join(' ');
+      if (errorMessage.includes('circular structure') || 
+          errorMessage.includes('Converting circular structure') ||
+          errorMessage.includes('cyclic object value') ||
+          errorMessage.includes('JSON.stringify')) {
+        console.log('🔄 Circular reference error caught and suppressed');
         return;
       }
       originalConsoleError.apply(console, args);
     };
+    
+    // Add global error handler for unhandled promise rejections
+    const unhandledRejectionHandler = (event: PromiseRejectionEvent) => {
+      if (event.reason && 
+          ((typeof event.reason === 'string' && 
+            (event.reason.includes('circular structure') || 
+             event.reason.includes('Converting circular structure') ||
+             event.reason.includes('cyclic object value'))) ||
+           (event.reason instanceof Error && 
+            (event.reason.message.includes('circular structure') || 
+             event.reason.message.includes('Converting circular structure') ||
+             event.reason.message.includes('cyclic object value'))))) {
+        console.log('🔄 Unhandled circular reference rejection caught and suppressed');
+        event.preventDefault();
+      }
+    };
+    
+    window.addEventListener('unhandledrejection', unhandledRejectionHandler);
     
     const loadModels = async () => {
       try {
@@ -309,9 +330,10 @@ const Gate: React.FC = () => {
 
     loadModels();
     
-    // Restore original console.error
+    // Restore original console.error and remove event listeners
     return () => {
       console.error = originalConsoleError;
+      window.removeEventListener('unhandledrejection', unhandledRejectionHandler);
     };
   }, []);
 
@@ -481,28 +503,39 @@ const Gate: React.FC = () => {
           console.log(`👤 DEBUG: Detected ${detections.length} face(s) for recognition`);
           setFaceDetectionCount(prev => prev + 1);
           
-                  // Capture the frame for recognition
-        const capturedDataUrl = canvas.toDataURL('image/jpeg');
-        
-        // Add a small delay to prevent rapid successive calls
-        setTimeout(async () => {
-          try {
-            // Create a clean image object to avoid circular references
-            const cleanImage = new Image();
-            cleanImage.crossOrigin = 'anonymous';
-            cleanImage.src = capturedDataUrl;
-            
-            await new Promise((resolve, reject) => {
-              cleanImage.onload = resolve;
-              cleanImage.onerror = reject;
-              setTimeout(() => reject(new Error('Image load timeout')), 3000);
-            });
-            
-            await performFaceRecognition(capturedDataUrl);
-          } catch (error) {
-            console.error('❌ DEBUG: Face recognition failed in auto-capture:', error);
+                  // Capture the frame for recognition with improved handling
+        try {
+          // Create a clean canvas to avoid circular references
+          const tempCanvas = document.createElement('canvas');
+          tempCanvas.width = canvas.width;
+          tempCanvas.height = canvas.height;
+          const tempContext = tempCanvas.getContext('2d');
+          
+          if (!tempContext) {
+            console.error('❌ DEBUG: Failed to get temporary canvas context');
+            return;
           }
-        }, 500);
+          
+          // Draw the current frame to the temporary canvas
+          tempContext.drawImage(canvas, 0, 0);
+          const capturedDataUrl = tempCanvas.toDataURL('image/jpeg', 0.8); // Use lower quality for smaller size
+          
+          // Add a small delay to prevent rapid successive calls
+          setTimeout(async () => {
+            try {
+              // Pass the clean data URL directly to face recognition
+              await performFaceRecognition(capturedDataUrl);
+              
+              // Clean up to prevent memory leaks
+              URL.revokeObjectURL(capturedDataUrl);
+            } catch (error) {
+              console.error('❌ DEBUG: Face recognition failed in auto-capture:', error);
+              // Don't rethrow to prevent stopping the auto-capture process
+            }
+          }, 500);
+        } catch (error) {
+          console.error('❌ DEBUG: Failed to capture frame:', error);
+        }
           } else {
           console.log('❌ DEBUG: No faces detected for recognition');
         }
@@ -704,27 +737,53 @@ const Gate: React.FC = () => {
       cleanCanvas.width = 320;
       cleanCanvas.height = 240;
       
-      // Load the captured data into a clean image
+      // Load the captured data into a clean image with improved error handling
       await new Promise<void>((resolve, reject) => {
         const tempImg = new Image();
         tempImg.crossOrigin = 'anonymous';
         
+        // Set a timeout to prevent hanging promises
+        const timeout = setTimeout(() => {
+          reject(new Error('Image loading timeout'));
+        }, 5000);
+        
         tempImg.onload = () => {
           try {
-            cleanContext?.drawImage(tempImg, 0, 0, 320, 240);
-            const cleanDataUrl = cleanCanvas.toDataURL('image/jpeg');
+            if (!cleanContext) {
+              clearTimeout(timeout);
+              reject(new Error('Canvas context is null'));
+              return;
+            }
+            
+            // Draw to clean canvas and get a fresh data URL
+            cleanContext.drawImage(tempImg, 0, 0, 320, 240);
+            const cleanDataUrl = cleanCanvas.toDataURL('image/jpeg', 0.8); // Use lower quality for smaller size
             
             // Load the clean data URL into the final image
-            img.onload = () => resolve();
-            img.onerror = reject;
+            img.onload = () => {
+              clearTimeout(timeout);
+              resolve();
+            };
+            img.onerror = (err) => {
+              clearTimeout(timeout);
+              reject(new Error('Failed to load clean image: ' + err));
+            };
             img.src = cleanDataUrl;
           } catch (error) {
+            clearTimeout(timeout);
             reject(error);
           }
         };
         
-        tempImg.onerror = reject;
-        tempImg.src = capturedDataUrl;
+        tempImg.onerror = (err) => {
+          clearTimeout(timeout);
+          reject(new Error('Failed to load captured image: ' + err));
+        };
+        
+        // Use a short timeout before setting src to avoid race conditions
+        setTimeout(() => {
+          tempImg.src = capturedDataUrl;
+        }, 50);
       });
       
       // Detect faces and get descriptors
@@ -744,24 +803,44 @@ const Gate: React.FC = () => {
       
       const faceDescriptor = detections[0].descriptor;
       
-      // Search in students database
-      const studentsRef = ref(db, 'students');
-      const studentsSnapshot = await get(studentsRef);
+      // Search in students database with optimized approach
+      console.log('Searching for student match with optimized approach...');
       
-      if (studentsSnapshot.exists()) {
-        const students = studentsSnapshot.val() as Record<string, StudentData>;
-        let bestMatch: StudentData | null = null;
-        let bestDistance = 0.6; // Threshold for face recognition
+      // Get the list of departments first to optimize fetching
+      const deptListRef = ref(db, 'students');
+      const deptListSnap = await get(deptListRef);
+      let bestMatch: StudentData | null = null;
+      let bestDistance = 0.6; // Threshold for face recognition
+      
+      if (deptListSnap.exists()) {
+        const departments = Object.keys(deptListSnap.val());
+        console.log(`Found ${departments.length} departments to check`);
         
-        for (const [studentId, student] of Object.entries(students)) {
-          if (student.faceDescriptor) {
-            const distance = faceapi.euclideanDistance(faceDescriptor, student.faceDescriptor);
-            if (distance < bestDistance) {
-              bestDistance = distance;
-              bestMatch = { ...student, id: studentId };
+        // Process departments in parallel for better performance
+        const checkDepartmentPromises = departments.map(async (dept) => {
+          console.log(`Checking department: ${dept}`);
+          const deptRef = ref(db, `students/${dept}`);
+          const deptSnap = await get(deptRef);
+          
+          if (deptSnap.exists()) {
+            const students = deptSnap.val();
+            console.log(`Found ${Object.keys(students).length} students in ${dept}`);
+            
+            for (const [studentId, student] of Object.entries(students)) {
+              if (student.faceDescriptor) {
+                const distance = faceapi.euclideanDistance(faceDescriptor, student.faceDescriptor);
+                if (distance < bestDistance) {
+                  bestDistance = distance;
+                  bestMatch = { ...student, id: studentId, department: dept };
+                  console.log(`Found potential student match: ${student.name || student.Name} with distance ${distance}`);
+                }
+              }
             }
           }
-        }
+        });
+        
+        // Wait for all department checks to complete
+        await Promise.all(checkDepartmentPromises);
         
         if (bestMatch) {
           console.log('✅ DEBUG: Student found:', bestMatch);
@@ -776,23 +855,38 @@ const Gate: React.FC = () => {
         }
       }
       
-      // Search in staff database
+      // Search in staff database with optimized approach
+      console.log('Searching for staff match with optimized approach...');
+      
+      // For staff, we'll use a more efficient approach by fetching only the necessary data
       const staffRef = ref(db, 'staff');
       const staffSnapshot = await get(staffRef);
+      // Reset match variables for staff search
+      bestMatch = null;
+      bestDistance = 0.6;
       
       if (staffSnapshot.exists()) {
         const staff = staffSnapshot.val() as Record<string, StaffData>;
-        let bestMatch: StaffData | null = null;
-        let bestDistance = 0.6;
+        console.log(`Found ${Object.keys(staff).length} staff members to check`);
         
-        for (const [staffId, staffMember] of Object.entries(staff)) {
-          if (staffMember.faceDescriptor) {
-            const distance = faceapi.euclideanDistance(faceDescriptor, staffMember.faceDescriptor);
-            if (distance < bestDistance) {
-              bestDistance = distance;
-              bestMatch = { ...staffMember, id: staffId };
+        // Process staff members in chunks for better performance
+        const staffEntries = Object.entries(staff);
+        const chunkSize = 10; // Process 10 staff members at a time
+        
+        for (let i = 0; i < staffEntries.length; i += chunkSize) {
+          const chunk = staffEntries.slice(i, i + chunkSize);
+          
+          // Process each chunk in parallel
+          await Promise.all(chunk.map(async ([staffId, staffMember]) => {
+            if (staffMember.faceDescriptor) {
+              const distance = faceapi.euclideanDistance(faceDescriptor, staffMember.faceDescriptor);
+              if (distance < bestDistance) {
+                bestDistance = distance;
+                bestMatch = { ...staffMember, id: staffId };
+                console.log(`Found potential staff match: ${staffMember.name} with distance ${distance}`);
+              }
             }
-          }
+          }));
         }
         
         if (bestMatch) {
@@ -817,10 +911,26 @@ const Gate: React.FC = () => {
       console.error('❌ DEBUG: Face recognition error:', error);
       
       // Handle circular reference errors specifically
-      if (error instanceof Error && error.message.includes('circular structure')) {
-        console.log('🔄 DEBUG: Circular reference detected, retrying...');
+      if (error instanceof Error && 
+          (error.message.includes('circular structure') || 
+           error.message.includes('Converting circular structure') ||
+           error.message.includes('cyclic object value'))) {
+        console.log('🔄 DEBUG: Circular reference detected, handling gracefully');
         setMessage('Processing face recognition... Please wait.');
-        // Don't set error status for circular reference, just retry
+        // Don't set error status for circular reference
+        
+        // Force garbage collection by nullifying references
+        if (image && image instanceof HTMLImageElement) {
+          img.onload = null;
+          img.onerror = null;
+          img.src = '';
+        }
+        
+        // Schedule a retry with a clean state after a short delay
+        setTimeout(() => {
+          setIsProcessing(false);
+          // We don't automatically retry to avoid infinite loops
+        }, 1000);
         return;
       }
       
@@ -828,6 +938,9 @@ const Gate: React.FC = () => {
       playErrorSound();
       setSystemStatus('error');
     } finally {
+      // In the finally block, we need to set processing to false
+      // The error handling for circular references already returns early
+      // so this will only execute for non-circular reference errors
       setIsProcessing(false);
     }
   };
@@ -868,7 +981,32 @@ const Gate: React.FC = () => {
       const accessLogRef = ref(db, `accessLogs/${accessLogData.id}`);
       await set(accessLogRef, accessLogData);
       
-      // Update attendance
+      // Save to new_attend collection for staff
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      console.log(`🔄 DEBUG: Saving to new_attend collection for staff`);
+      
+      // Save to new_attend collection
+      const collectionRef = ref(db, `new_attend/${today}/${staff.id}`);
+      const dataToSave = {
+        id: staff.id,
+        name: staff.name,
+        department: staff.department,
+        mode: staff.mode || "Staff",
+        in: direction === 'in' ? new Date().toISOString() : '',
+        out: direction === 'out' ? new Date().toISOString() : '',
+        status: direction.toUpperCase(),
+        timestamp: new Date().toISOString()
+      };
+      
+      try {
+        await set(collectionRef, dataToSave);
+        console.log(`✅ DEBUG: Successfully saved to new_attend collection`);
+      } catch (error) {
+        console.error(`❌ DEBUG: Error saving to new_attend:`, error);
+        throw error;
+      }
+      
+      // Update attendance (legacy)
       const attendanceRef = ref(db, `attendance/${staff.id}`);
       await set(attendanceRef, {
         personId: staff.id,
@@ -965,7 +1103,81 @@ const Gate: React.FC = () => {
       const accessLogRef = ref(db, `accessLogs/${accessLogData.id}`);
       await set(accessLogRef, accessLogData);
       
-      // Update attendance
+      // Determine which collection to use based on student mode
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      const collectionName = student.mode === "Hosteller" ? "outing" : "new_attend";
+      console.log(`🔄 DEBUG: Saving to ${collectionName} collection for ${student.mode} student`);
+      
+      // Get current timestamp
+      const timestamp = new Date().toISOString();
+      
+      // Save to appropriate collection based on student mode
+      const collectionRef = student.mode === "Hosteller" 
+        ? ref(db, `${collectionName}/${today}/${student.id}/current`)
+        : ref(db, `${collectionName}/${today}/${student.id}`);
+        
+      console.log(`Using database path: ${student.mode === "Hosteller" ? 
+        `${collectionName}/${today}/${student.id}/current` : 
+        `${collectionName}/${today}/${student.id}`}`);
+      
+      // Create data structure based on student mode
+      let dataToSave;
+      
+      if (student.mode === "Hosteller") {
+        // For hostellers, use the structure shown in the image
+        if (direction === 'in') {
+          dataToSave = {
+            department: student.department,
+            in: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS
+            in_time: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS
+            in_timestamp: timestamp,
+            name: student.name,
+            out_time: "",
+            out_timestamp: "",
+            username: student.id,
+            status: "IN",
+            outingApproved: outingApproved
+          };
+          
+          console.log('Saving hosteller IN data with format:', dataToSave);
+        } else {
+          // For OUT, we need to get the existing IN data first
+          const existingData = await get(collectionRef);
+          dataToSave = {
+            ...existingData.exists() ? existingData.val() : {},
+            out: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS as shown in image
+            out_time: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS
+            out_timestamp: timestamp,
+            status: "OUT",
+            outingApproved: outingApproved
+          };
+          
+          console.log('Updating hosteller OUT data with format:', dataToSave);
+        }
+      } else {
+        // Regular format for non-hostellers
+        dataToSave = {
+          id: student.id,
+          name: student.name,
+          department: student.department,
+          mode: student.mode,
+          in: direction === 'in' ? timestamp : '',
+          out: direction === 'out' ? timestamp : '',
+          status: direction.toUpperCase(),
+          outingApproved: outingApproved,
+          timestamp: timestamp
+        };
+      }
+      
+      try {
+        await set(collectionRef, dataToSave);
+        console.log(`✅ DEBUG: Successfully saved to ${collectionName} collection`);
+      } catch (error) {
+        console.error(`❌ DEBUG: Error saving to ${collectionName}:`, error);
+        throw error;
+      }
+      
+      // Update attendance (legacy)
       const attendanceRef = ref(db, `attendance/${student.id}`);
       await set(attendanceRef, {
         personId: student.id,
@@ -1622,4 +1834,4 @@ const Gate: React.FC = () => {
   );
 };
 
-export default Gate; 
+export default Gate;

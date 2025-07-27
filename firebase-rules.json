@@ -1,3 +1,7 @@
+"outing": {
+  ".read": true,
+  ".write": true
+}
 {
   "rules": {
     "Attendance_Log": {
@@ -24,6 +28,10 @@
       ".read": true,
       ".write": true
     },
+    "outing": {
+      ".read": true,
+      ".write": true
+    },
     "logs": {
       ".read": true,
       ".write": true
@@ -37,4 +45,4 @@
       ".write": true
     }
   }
-} 
+}

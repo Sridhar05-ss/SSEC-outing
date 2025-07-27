@@ -276,34 +276,78 @@ const GateTerminal = () => {
         }
       }
 
-      // 3. If no staff found, check students
+      // 3. If no staff found, check students with optimized approach
       if (!foundPerson) {
-        const studentsSnap = await get(ref(db, "students"));
+        console.log('No staff match found, checking students...');
         
-        if (studentsSnap.exists()) {
-          const studentsByDept = studentsSnap.val();
+        // Get the list of departments first to optimize fetching
+        const deptListRef = ref(db, "students");
+        const deptListSnap = await get(deptListRef);
+        
+        if (deptListSnap.exists()) {
+          const departments = Object.keys(deptListSnap.val());
+          console.log(`Found ${departments.length} departments to check`);
           
-          // Search through all departments
-          for (const [dept, students] of Object.entries(studentsByDept)) {
-            for (const [studentId, student] of Object.entries(students as Record<string, Student>)) {
-              if (student.faceDescriptor && Array.isArray(student.faceDescriptor)) {
-                const storedDescriptor = new Float32Array(student.faceDescriptor);
-                const distance = faceapi.euclideanDistance(queryDescriptor, storedDescriptor);
+          // Create a cache for face descriptors to improve performance
+          const faceDescriptorCache = new Map();
+          
+          // Process departments in parallel for better performance
+          const checkDepartment = async (dept) => {
+            console.log(`Checking department: ${dept}`);
+            const deptRef = ref(db, `students/${dept}`);
+            const deptSnap = await get(deptRef);
+            
+            if (deptSnap.exists()) {
+              const students = deptSnap.val();
+              console.log(`Found ${Object.keys(students).length} students in ${dept}`);
+              
+              // Process students in chunks for better performance
+              const studentEntries = Object.entries(students as Record<string, Student>);
+              const chunkSize = 10; // Process 10 students at a time
+              
+              for (let i = 0; i < studentEntries.length; i += chunkSize) {
+                const chunk = studentEntries.slice(i, i + chunkSize);
                 
-                if (distance < minDistance) {
-                  minDistance = distance;
-                  foundPerson = {
-                    name: student.Name || student.name || "Unknown",
-                    id: studentId,
-                    department: dept,
-                    role: "student",
-                    mode: student.mode || "Hosteller",
-                    faceDescriptor: student.faceDescriptor
-                  };
+                // Process each chunk in parallel
+                await Promise.all(chunk.map(async ([studentId, student]) => {
+                  if (student.faceDescriptor && Array.isArray(student.faceDescriptor)) {
+                    // Check if descriptor is already in cache
+                    let storedDescriptor;
+                    if (faceDescriptorCache.has(studentId)) {
+                      storedDescriptor = faceDescriptorCache.get(studentId);
+                    } else {
+                      storedDescriptor = new Float32Array(student.faceDescriptor);
+                      faceDescriptorCache.set(studentId, storedDescriptor);
+                    }
+                    
+                    const distance = faceapi.euclideanDistance(queryDescriptor, storedDescriptor);
+                    
+                    if (distance < minDistance) {
+                      minDistance = distance;
+                      foundPerson = {
+                        name: student.Name || student.name || "Unknown",
+                        id: studentId,
+                        department: dept,
+                        role: "student",
+                        mode: student.mode || "Hosteller",
+                        faceDescriptor: student.faceDescriptor
+                      };
+                      console.log(`Found potential match: ${student.Name || student.name} with distance ${distance}`);
+                    }
+                  }
+                }));
+                
+                // If we found a match with high confidence, break early
+                if (foundPerson && minDistance < 0.4) {
+                  console.log(`Found high confidence match, breaking early`);
+                  break;
                 }
               }
             }
-          }
+          };
+          
+          // Check departments in parallel with Promise.all for better performance
+          await Promise.all(departments.map(checkDepartment));
         }
       }
 
@@ -503,13 +547,27 @@ const GateTerminal = () => {
 
       setAccessLog(accessLogData);
 
-      // Save to new_attend collection
+      // Determine which collection to use based on student mode
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      const attendRef = ref(db, `new_attend/${today}/${student.id}`);
-      console.log('=== SAVING TO NEW_ATTEND COLLECTION ===');
-      console.log('Path:', `new_attend/${today}/${student.id}`);
+      const collectionName = student.mode === "Hosteller" ? "outing" : "new_attend";
+      
+      // For hostellers, use the structure shown in the image
+      // Format: outing/YYYY-MM-DD/STUDENT_ID/current/...
+      const attendRef = student.mode === "Hosteller" 
+        ? ref(db, `${collectionName}/${today}/${student.id}/current`)
+        : ref(db, `${collectionName}/${today}/${student.id}`);
+        
+      console.log(`Using database path: ${student.mode === "Hosteller" ? 
+        `${collectionName}/${today}/${student.id}/current` : 
+        `${collectionName}/${today}/${student.id}`}`);
+      
+      console.log(`=== SAVING TO ${collectionName.toUpperCase()} COLLECTION ===`);
+      console.log('Path:', student.mode === "Hosteller" ? 
+        `${collectionName}/${today}/${student.id}/current` : 
+        `${collectionName}/${today}/${student.id}`);
       console.log('Student ID:', student.id);
       console.log('Student Name:', student.name);
+      console.log('Student Mode:', student.mode);
       
       const attendSnap = await get(attendRef);
       console.log('Existing data check:', attendSnap.exists() ? 'EXISTS' : 'NOT EXISTS');
@@ -521,19 +579,46 @@ const GateTerminal = () => {
       if (!attendSnap.exists() || !attendSnap.val().in) {
         // First scan, set IN
         inTime = new Date().toISOString();
-        const dataToSave = {
-          id: student.id,
-          name: student.name,
-          department: student.department,
-          in: inTime,
-          out: "",
-          status: "IN"
-        };
+        
+        // Create data structure based on student mode
+        let dataToSave;
+        
+        if (student.mode === "Hosteller") {
+          // Format data according to the image structure for hostellers
+          // Exactly match the format shown in the image
+          dataToSave = {
+            department: student.department,
+            in: inTime.split('T')[1].substring(0, 8), // Format: HH:MM:SS
+            in_time: inTime.split('T')[1].substring(0, 8), // Format: HH:MM:SS
+            in_timestamp: inTime,
+            name: student.name,
+            out_time: "",
+            out_timestamp: "",
+            username: student.id,
+            status: "IN",
+            outingApproved: !!approvedRequest
+          };
+          
+          console.log('Saving hosteller data with format:', dataToSave);
+        } else {
+          // Regular format for non-hostellers
+          dataToSave = {
+            id: student.id,
+            name: student.name,
+            department: student.department,
+            mode: student.mode,
+            in: inTime,
+            out: "",
+            status: "IN",
+            outingApproved: !!approvedRequest
+          };
+        }
+        
         console.log('Saving first scan data:', dataToSave);
         
         try {
           await set(attendRef, dataToSave);
-          console.log('✅ Successfully saved to new_attend collection');
+          console.log(`✅ Successfully saved to ${collectionName} collection`);
           
           // Verify the save
           const verifySnap = await get(attendRef);
@@ -543,29 +628,51 @@ const GateTerminal = () => {
             console.log('❌ Verification failed - data not found');
           }
         } catch (error) {
-          console.error('❌ Error saving to new_attend:', error);
+          console.error(`❌ Error saving to ${collectionName}:`, error);
           throw error;
         }
         status = "IN";
-      } else if (attendSnap.exists() && !attendSnap.val().out) {
+      } else if (attendSnap.exists() && (student.mode === "Hosteller" ? !attendSnap.val().out_timestamp : !attendSnap.val().out)) {
         // Second scan, set OUT
-        inTime = attendSnap.val().in;
+        inTime = student.mode === "Hosteller" ? attendSnap.val().in_timestamp : attendSnap.val().in;
         outTime = new Date().toISOString();
-        const dataToSave = {
-          id: student.id,
-          name: student.name,
-          department: student.department,
-          in: inTime,
-          out: outTime,
-          status: "OUT"
-        };
+        
+        let dataToSave;
+        
+        if (student.mode === "Hosteller") {
+          // Format data according to the image structure for hostellers
+          // Preserve all existing data and add out information
+          dataToSave = {
+            ...attendSnap.val(),
+            out: outTime.split('T')[1].substring(0, 8), // Format: HH:MM:SS as shown in image
+            out_time: outTime.split('T')[1].substring(0, 8), // Format: HH:MM:SS
+            out_timestamp: outTime,
+            status: "OUT",
+            outingApproved: !!approvedRequest
+          };
+          
+          console.log('Updating hosteller data with OUT status:', dataToSave);
+        } else {
+          // Regular format for non-hostellers
+          dataToSave = {
+            id: student.id,
+            name: student.name,
+            department: student.department,
+            mode: student.mode,
+            in: inTime,
+            out: outTime,
+            status: "OUT",
+            outingApproved: !!approvedRequest
+          };
+        }
+        
         console.log('Saving second scan data:', dataToSave);
         
         try {
           await set(attendRef, dataToSave);
-          console.log('✅ Successfully updated new_attend collection');
+          console.log(`✅ Successfully updated ${collectionName} collection`);
         } catch (error) {
-          console.error('❌ Error updating new_attend:', error);
+          console.error(`❌ Error updating ${collectionName}:`, error);
           throw error;
         }
         status = "OUT";

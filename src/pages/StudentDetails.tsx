@@ -131,10 +131,10 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
       if (ctx) {
         try {
           // Draw video frame to canvas
-          ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+        ctx.drawImage(videoRef.current, 0, 0, 320, 240);
           
           // Get the data URL directly from the canvas
-          const dataUrl = canvasRef.current.toDataURL('image/png');
+        const dataUrl = canvasRef.current.toDataURL('image/png');
           
           // Create a completely clean image without any video references
           const img = new Image();
@@ -161,18 +161,18 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
                       .withFaceDescriptor();
                   })
                   .then(detection => {
-                    console.log('Detection result:', detection);
-                    if (!detection) {
-                      setCameraError("No face detected. Please try again with your face clearly visible and well-lit.");
-                      return;
-                    }
-                    const descriptor = Array.from(detection.descriptor);
+        console.log('Detection result:', detection);
+        if (!detection) {
+          setCameraError("No face detected. Please try again with your face clearly visible and well-lit.");
+          return;
+        }
+        const descriptor = Array.from(detection.descriptor);
                     return set(ref(db, `students/${currentStudent.department}/${currentStudent.username}/faceDescriptor`), descriptor);
                   })
                   .then(() => {
-                    alert('Face captured and saved!');
-                    closeCamera();
-                    fetchStudents();
+        alert('Face captured and saved!');
+        closeCamera();
+        fetchStudents();
                   })
                   .catch(error => {
                     console.error('Face detection error:', error);
