@@ -25,7 +25,7 @@ const Admin: React.FC = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('user');
+    fakeAuth.logout();
     window.location.href = '/login';
   };
 

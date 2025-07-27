@@ -129,21 +129,68 @@ const StudentDetails: React.FC<StudentDetailsProps> = ({ department }) => {
     if (videoRef.current && canvasRef.current && currentStudent?.username && currentStudent.department) {
       const ctx = canvasRef.current.getContext('2d');
       if (ctx) {
-        ctx.drawImage(videoRef.current, 0, 0, 320, 240);
-        const dataUrl = canvasRef.current.toDataURL('image/png');
-        // Extract 128D descriptor
-        const img = await faceapi.fetchImage(dataUrl);
-        const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceDescriptor();
-        console.log('Detection result:', detection);
-        if (!detection) {
-          setCameraError("No face detected. Please try again with your face clearly visible and well-lit.");
-          return;
+        try {
+          // Draw video frame to canvas
+          ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+          
+          // Get the data URL directly from the canvas
+          const dataUrl = canvasRef.current.toDataURL('image/png');
+          
+          // Create a completely clean image without any video references
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          
+          await new Promise((resolve, reject) => {
+            img.onload = () => {
+              try {
+                // Create a new canvas and draw the clean image
+                const cleanCanvas = document.createElement('canvas');
+                const cleanContext = cleanCanvas.getContext('2d');
+                cleanCanvas.width = 320;
+                cleanCanvas.height = 240;
+                cleanContext?.drawImage(img, 0, 0, 320, 240);
+                
+                // Get clean data URL
+                const cleanDataUrl = cleanCanvas.toDataURL('image/png');
+                
+                // Perform face detection with the clean image
+                faceapi.fetchImage(cleanDataUrl)
+                  .then(faceImg => {
+                    return faceapi.detectSingleFace(faceImg, new faceapi.TinyFaceDetectorOptions())
+                      .withFaceLandmarks()
+                      .withFaceDescriptor();
+                  })
+                  .then(detection => {
+                    console.log('Detection result:', detection);
+                    if (!detection) {
+                      setCameraError("No face detected. Please try again with your face clearly visible and well-lit.");
+                      return;
+                    }
+                    const descriptor = Array.from(detection.descriptor);
+                    return set(ref(db, `students/${currentStudent.department}/${currentStudent.username}/faceDescriptor`), descriptor);
+                  })
+                  .then(() => {
+                    alert('Face captured and saved!');
+                    closeCamera();
+                    fetchStudents();
+                  })
+                  .catch(error => {
+                    console.error('Face detection error:', error);
+                    setCameraError("Error during face detection. Please try again.");
+                  });
+                resolve();
+              } catch (error) {
+                reject(error);
+              }
+            };
+            img.onerror = reject;
+            img.src = dataUrl;
+          });
+          
+        } catch (error) {
+          console.error('Capture face error:', error);
+          setCameraError("Error capturing face. Please try again.");
         }
-        const descriptor = Array.from(detection.descriptor);
-        await set(ref(db, `students/${currentStudent.department}/${currentStudent.username}/faceDescriptor`), descriptor);
-        alert('Face captured and saved!');
-        closeCamera();
-        fetchStudents();
       }
     }
   };

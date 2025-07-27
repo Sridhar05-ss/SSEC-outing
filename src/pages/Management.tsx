@@ -5,6 +5,7 @@ import { db } from "../lib/firebase";
 import { ref, get, query, orderByChild, limitToLast } from "firebase/database";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { fakeAuth } from "../lib/fakeAuth";
 
 const departments = [
   "AIML", "CYBER SECURITY", "AIDS", "IT", "ECE", "CSE", "EEE", "MECH", "CIVIL", "DCSE", "DECE", "DMECH"
@@ -220,11 +221,11 @@ function StudentLogsTable({ logs }) {
         <thead>
           <tr className="bg-blue-600 text-white text-center">
             <th className="py-3 px-6">ID</th>
-            <th className="py-3 px-6">Name</th>
-            <th className="py-3 px-6">Department</th>
+            <th className="py-3 px-6">NAME</th>
+            <th className="py-3 px-6">DEPARTMENT</th>
             <th className="py-3 px-6">IN</th>
             <th className="py-3 px-6">OUT</th>
-            <th className="py-3 px-6">Status</th>
+            <th className="py-3 px-6">STATUS</th>
           </tr>
         </thead>
         <tbody>
@@ -370,6 +371,7 @@ export default function Management() {
   const [studentLogs, setStudentLogs] = useState<AccessLog[]>([]);
   const [staffLogs, setStaffLogs] = useState<AccessLog[]>([]);
   const [visitorLogs, setVisitorLogs] = useState<VisitorLog[]>([]);
+  const [dayScholarsLogs, setDayScholarsLogs] = useState<AccessLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Get today's date string (YYYY-MM-DD)
@@ -381,7 +383,7 @@ export default function Management() {
     try {
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
       console.log('Fetching logs for date:', today);
-      let allLogs: AccessLog[] = [];
+      const allLogs: AccessLog[] = [];
       
       // Test Firebase connection first
       console.log('Testing Firebase connection...');
@@ -389,64 +391,91 @@ export default function Management() {
       const testSnapshot = await get(testRef);
       console.log('Firebase connection test result:', testSnapshot.exists() ? 'SUCCESS' : 'NO DATA');
       
-              // Fetch from new_attend collection
-        const attendanceRef = ref(db, `new_attend/${today}`);
-        console.log('Fetching from new_attend collection:', `new_attend/${today}`);
+      // Fetch from logs collection (management logs)
+      console.log('Fetching from logs collection...');
+      const logsRef = ref(db, 'logs');
+      const logsSnapshot = await get(logsRef);
+      
+      if (logsSnapshot.exists()) {
+        const logsData = logsSnapshot.val();
+        console.log('Logs data found:', Object.keys(logsData).length, 'entries');
+        
+        // Process all log entries
+        Object.entries(logsData).forEach(([logId, logData]: [string, unknown]) => {
+          const log = logData as AccessLog;
+          
+          // Only include logs from today
+          if (log.timestamp && log.timestamp.startsWith(today)) {
+            allLogs.push(log);
+          }
+        });
+      } else {
+        console.log('No logs data found in logs collection');
+      }
+      
+      // Also fetch from new_attend collection for backward compatibility
+      const attendanceRef = ref(db, `new_attend/${today}`);
+      console.log('Fetching from new_attend collection:', `new_attend/${today}`);
       const attendanceSnapshot = await get(attendanceRef);
       
-              if (attendanceSnapshot.exists()) {
-          const attendanceData = attendanceSnapshot.val();
-          console.log('Attendance data found:', Object.keys(attendanceData));
-          
-          // Process all attendance records
-          Object.entries(attendanceData).forEach(([personId, personData]: [string, any]) => {
-            const log = personData as any;
-            
-            const accessLog: AccessLog = {
-              id: personId,
-              studentId: personId,
-              staffId: personId,
-              name: log.name || "Unknown",
-              department: log.department || "Unknown",
-              mode: log.mode || "Unknown",
-              role: "student", // Default to student, can be updated based on your logic
-              direction: log.out ? "out" : "in",
-              timestamp: log.in || log.out || new Date().toISOString(),
-              status: "granted",
-              reason: log.out ? "Exit" : "Entry"
-            };
-            
-            allLogs.push(accessLog);
-          });
-        } else {
-          console.log('No attendance data found for today in new_attend collection');
-        }
+      if (attendanceSnapshot.exists()) {
+        const attendanceData = attendanceSnapshot.val();
+        console.log('Attendance data found:', Object.keys(attendanceData));
+        
+              // Process all attendance records
+      Object.entries(attendanceData).forEach(([personId, personData]: [string, unknown]) => {
+        const log = personData as Record<string, unknown>;
+        
+        // Determine if this is a student or staff based on the data
+        const isStaff = log.role === "staff" || log.department?.toString().toLowerCase().includes("staff");
+        const role = isStaff ? "staff" : "student";
+        
+        const accessLog: AccessLog = {
+          id: personId,
+          studentId: role === "student" ? personId : undefined,
+          staffId: role === "staff" ? personId : undefined,
+          name: (log.name as string) || "Unknown",
+          department: (log.department as string) || "Unknown",
+          mode: (log.mode as string) || (role === "student" ? "Hosteller" : "regular"),
+          role: role,
+          direction: log.out ? "out" : "in",
+          timestamp: (log.in as string) || (log.out as string) || new Date().toISOString(),
+          status: "granted",
+          reason: log.out ? "Exit" : "Entry"
+        };
+        
+        allLogs.push(accessLog);
+      });
+      } else {
+        console.log('No attendance data found for today in new_attend collection');
+      }
       
       // Sort by timestamp (newest first)
       allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       
-      setAllLogs(allLogs);
-      
-      // Separate logs by type
+      // Separate logs by type and mode
       const students = allLogs.filter(log => log.role === "student");
       const staff = allLogs.filter(log => log.role === "staff");
       
+      // Filter for All Logs: Only include dayscholar students and staff
+      const allLogsFiltered = allLogs.filter(log => {
+        if (log.role === "staff") return true;
+        if (log.role === "student" && log.mode === "DayScholar") return true;
+        return false; // Exclude hosteller students from All Logs
+      });
+      
+      setAllLogs(allLogsFiltered);
       setStudentLogs(students);
       setStaffLogs(staff);
       
-      console.log('Successfully fetched logs from new_attend collection:', {
+      console.log('Successfully fetched logs:', {
         total: allLogs.length,
         students: students.length,
         staff: staff.length
       });
       
     } catch (error) {
-      console.error('Error fetching logs:', error);
-      console.error('Error details:', {
-        message: error.message,
-        code: error.code,
-        stack: error.stack
-      });
+      console.error('Error fetching logs:', error instanceof Error ? error.message : 'Unknown error');
       setAllLogs([]);
       setStudentLogs([]);
       setStaffLogs([]);
@@ -455,8 +484,60 @@ export default function Management() {
     }
   };
 
+  // Fetch day scholars data
+  const fetchDayScholars = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      console.log('Fetching day scholars for date:', today);
+      
+      const dayscholarsRef = ref(db, 'dayscholars');
+      const dayscholarsSnapshot = await get(dayscholarsRef);
+      
+      if (dayscholarsSnapshot.exists()) {
+        const dayscholarsData = dayscholarsSnapshot.val();
+        console.log('Day scholars data found:', Object.keys(dayscholarsData).length, 'entries');
+        
+        // Process day scholars data
+        const dayScholarsLogs: AccessLog[] = [];
+        Object.entries(dayscholarsData).forEach(([studentId, studentData]: [string, unknown]) => {
+          const student = studentData as Record<string, unknown>;
+          
+          const accessLog: AccessLog = {
+            id: studentId,
+            studentId: studentId,
+            name: (student.name as string) || "Unknown",
+            department: (student.department as string) || "Unknown",
+            mode: "DayScholar",
+            role: "student",
+            direction: "out", // Day scholars are always exit records
+            timestamp: (student.timestamp as string) || (student.out as string) || new Date().toISOString(),
+            status: "granted",
+            reason: "Day Scholar Exit"
+          };
+          
+          dayScholarsLogs.push(accessLog);
+        });
+        
+        // Filter for today's data
+        const todayDayScholars = dayScholarsLogs.filter(log => 
+          log.timestamp && log.timestamp.startsWith(today)
+        );
+        
+        setDayScholarsLogs(todayDayScholars);
+        console.log('Day scholars for today:', todayDayScholars.length);
+      } else {
+        console.log('No day scholars data found');
+        setDayScholarsLogs([]);
+      }
+    } catch (error) {
+      console.error('Error fetching day scholars:', error instanceof Error ? error.message : 'Unknown error');
+      setDayScholarsLogs([]);
+    }
+  };
+
   useEffect(() => {
     fetchLogs();
+    fetchDayScholars();
   }, []);
 
   // Filter logs for today only
@@ -479,13 +560,19 @@ export default function Management() {
   };
 
   // Student Logs: Dayscholar/Hostel toggle and filter
-  const todayStudentLogs = filterToday(studentLogs).filter(log => 
-    studentType === "dayscholar" ? log.mode === "DayScholar" : log.mode === "Hosteller"
-  );
+  const todayStudentLogs = studentType === "dayscholar" 
+    ? filterToday(dayScholarsLogs) 
+    : filterToday(studentLogs).filter(log => 
+        log.mode === "Hosteller" || 
+        log.mode === "Hostel" || 
+        log.mode === "hostel" || 
+        log.mode === "hosteller" ||
+        (log.role === "student" && !log.mode?.toLowerCase().includes("dayscholar"))
+      );
 
   // Logout handler
   const handleLogout = () => {
-    // Clear any auth state if needed
+    fakeAuth.logout();
     navigate("/login");
   };
 
@@ -499,9 +586,7 @@ export default function Management() {
   };
 
   const handleDownloadPDF = async () => {
-    // @ts-ignore
-    const jsPDF = (await import("jspdf")).jsPDF;
-    // @ts-ignore
+    const { jsPDF } = await import("jspdf");
     const html2canvas = (await import("html2canvas")).default;
     const table = tableRef.current;
     if (!table) return;
@@ -533,9 +618,7 @@ export default function Management() {
   };
   const handleVisitorsPrint = () => { window.print(); };
   const handleVisitorsDownloadPDF = async () => {
-    // @ts-ignore
-    const jsPDF = (await import("jspdf")).jsPDF;
-    // @ts-ignore
+    const { jsPDF } = await import("jspdf");
     const html2canvas = (await import("html2canvas")).default;
     const table = visitorsRef.current;
     if (!table) return;
@@ -578,9 +661,7 @@ export default function Management() {
 
   // Download PDF for weekly records
   const handleWeeklyDownloadPDF = async () => {
-    // @ts-ignore
-    const jsPDF = (await import("jspdf")).jsPDF;
-    // @ts-ignore
+    const { jsPDF } = await import("jspdf");
     const html2canvas = (await import("html2canvas")).default;
     const table = weeklyRef.current;
     if (!table) return;
@@ -609,7 +690,7 @@ export default function Management() {
   };
 
   let TableComponent = null;
-  let logs = [];
+  const logs = [];
   if (active === "all") {
     TableComponent = () => (
       <>
@@ -668,7 +749,7 @@ export default function Management() {
                 <div>
                   <p className="text-sm text-orange-600">Day Scholars</p>
                   <p className="text-2xl font-bold text-orange-800">
-                    {studentLogs.filter(log => log.mode === "DayScholar").length}
+                    {dayScholarsLogs.length}
                   </p>
                 </div>
                 <User className="h-8 w-8 text-orange-600" />
@@ -680,7 +761,10 @@ export default function Management() {
         {/* Refresh Button */}
         <div className="flex justify-end mb-4">
           <Button 
-            onClick={fetchLogs} 
+            onClick={() => {
+              fetchLogs();
+              fetchDayScholars();
+            }} 
             disabled={loading}
             className="bg-blue-600 hover:bg-blue-700 text-white"
           >

@@ -19,6 +19,22 @@
     "new_attendance_logs": {
       ".read": true,
       ".write": true
+    },
+    "new_attend": {
+      ".read": true,
+      ".write": true
+    },
+    "logs": {
+      ".read": true,
+      ".write": true
+    },
+    "dayscholars": {
+      ".read": true,
+      ".write": true
+    },
+    "pass_request": {
+      ".read": true,
+      ".write": true
     }
   }
 } 
