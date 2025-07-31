@@ -49,8 +49,9 @@ interface VisitorLog {
 function Sidebar({ active, setActive, studentType, setStudentType }) {
   const navItems = [
     { key: "all", label: "All Logs" },
-    { key: "student", label: "Student Logs" },
     { key: "staff", label: "Staff Logs" },
+    { key: "dayscholar", label: "Dayscholar Logs" },
+    { key: "hostellers", label: "Hostellers Logs" },
     { key: "visitors", label: "Visitors Details" },
   ];
   return (
@@ -67,17 +68,17 @@ function Sidebar({ active, setActive, studentType, setStudentType }) {
               {item.label}
               {active === item.key && <span className="absolute right-2 top-1/2 -translate-y-1/2 w-2 h-2 bg-blue-200 rounded-full animate-ping" />}
             </button>
-            {/* Dayscholar/Hostel toggle for Student Logs */}
-            {item.key === "student" && active === "student" && (
+            {/* Outing/Home Visiting toggle for Hostellers Logs */}
+            {item.key === "hostellers" && active === "hostellers" && (
               <div className="flex flex-col gap-2 mt-2 ml-4">
                 <button
-                  className={`px-4 py-2 rounded-lg font-semibold text-left border-2 transition-all duration-150 ${studentType === "dayscholar" ? "bg-white text-blue-700 border-blue-700 shadow-md" : "bg-blue-100 text-blue-700 border-transparent hover:border-blue-400"}`}
-                  onClick={() => setStudentType("dayscholar")}
-                >Dayscholar</button>
+                  className={`px-4 py-2 rounded-lg font-semibold text-left border-2 transition-all duration-150 ${studentType === "outing" ? "bg-white text-blue-700 border-blue-700 shadow-md" : "bg-blue-100 text-blue-700 border-transparent hover:border-blue-400"}`}
+                  onClick={() => setStudentType("outing")}
+                >Outing Logs</button>
                 <button
-                  className={`px-4 py-2 rounded-lg font-semibold text-left border-2 transition-all duration-150 ${studentType === "hostel" ? "bg-white text-blue-700 border-blue-700 shadow-md" : "bg-blue-100 text-blue-700 border-transparent hover:border-blue-400"}`}
-                  onClick={() => setStudentType("hostel")}
-                >Hostel</button>
+                  className={`px-4 py-2 rounded-lg font-semibold text-left border-2 transition-all duration-150 ${studentType === "homevisiting" ? "bg-white text-blue-700 border-blue-700 shadow-md" : "bg-blue-100 text-blue-700 border-transparent hover:border-blue-400"}`}
+                  onClick={() => setStudentType("homevisiting")}
+                >Home Visiting Logs</button>
               </div>
             )}
           </div>
@@ -249,6 +250,76 @@ function StudentLogsTable({ logs }) {
   );
 }
 
+function OutingLogsTable({ logs }) {
+  return (
+    <div className="w-[95%] mx-auto bg-white rounded-2xl shadow-lg p-4 overflow-y-auto max-h-[70vh] print:p-0 print:shadow-none print:bg-white">
+      <table className="w-full text-left rounded text-sm table-fixed">
+        <thead>
+          <tr className="bg-blue-600 text-white text-center">
+            <th className="py-3 px-6">ID</th>
+            <th className="py-3 px-6">Name</th>
+            <th className="py-3 px-6">Department</th>
+            <th className="py-3 px-6">OUT</th>
+            <th className="py-3 px-6">IN</th>
+            <th className="py-3 px-6">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logs.length === 0 ? (
+            <tr><td colSpan={6} className="py-6 text-center text-blue-700">No outing logs found.</td></tr>
+          ) : (
+            logs.map((log, i) => (
+              <tr key={i} className={i % 2 === 0 ? "bg-blue-50 transition-all hover:bg-blue-100" : "bg-white transition-all hover:bg-blue-50"}>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.id}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.name}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[10rem]">{log.dept}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.out}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.in}</td>
+                <td className="py-3 px-6 text-center">{getStatusBadge(log.out, log.in)}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HomeVisitingLogsTable({ logs }) {
+  return (
+    <div className="w-[95%] mx-auto bg-white rounded-2xl shadow-lg p-4 overflow-y-auto max-h-[70vh] print:p-0 print:shadow-none print:bg-white">
+      <table className="w-full text-left rounded text-sm table-fixed">
+        <thead>
+          <tr className="bg-blue-600 text-white text-center">
+            <th className="py-3 px-6">ID</th>
+            <th className="py-3 px-6">Name</th>
+            <th className="py-3 px-6">Department</th>
+            <th className="py-3 px-6">OUT</th>
+            <th className="py-3 px-6">IN</th>
+            <th className="py-3 px-6">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {logs.length === 0 ? (
+            <tr><td colSpan={6} className="py-6 text-center text-blue-700">No home visiting logs found.</td></tr>
+          ) : (
+            logs.map((log, i) => (
+              <tr key={i} className={i % 2 === 0 ? "bg-blue-50 transition-all hover:bg-blue-100" : "bg-white transition-all hover:bg-blue-50"}>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[8rem]">{log.id}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.name}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[10rem]">{log.dept}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.out}</td>
+                <td className="py-3 px-6 text-center break-words truncate max-w-[12rem]">{log.in}</td>
+                <td className="py-3 px-6 text-center">{getStatusBadge(log.out, log.in)}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function StaffLogsTable({ logs }) {
   return (
     <div className="w-[95%] mx-auto bg-white rounded-2xl shadow-lg p-4 overflow-y-auto max-h-[70vh] print:p-0 print:shadow-none print:bg-white">
@@ -359,7 +430,7 @@ export default function Management() {
   const [active, setActive] = useState("all");
   const [search, setSearch] = useState("");
   const [date, setDate] = useState("");
-  const [studentType, setStudentType] = useState("dayscholar");
+  const [studentType, setStudentType] = useState("outing");
   const tableRef = useRef(null);
   const navigate = useNavigate();
   const [showWeekly, setShowWeekly] = useState(false);
@@ -372,6 +443,8 @@ export default function Management() {
   const [staffLogs, setStaffLogs] = useState<AccessLog[]>([]);
   const [visitorLogs, setVisitorLogs] = useState<VisitorLog[]>([]);
   const [dayScholarsLogs, setDayScholarsLogs] = useState<AccessLog[]>([]);
+  const [outingLogs, setOutingLogs] = useState<AccessLog[]>([]);
+  const [homeVisitingLogs, setHomeVisitingLogs] = useState<AccessLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Get today's date string (YYYY-MM-DD)
@@ -559,16 +632,22 @@ export default function Management() {
     );
   };
 
-  // Student Logs: Dayscholar/Hostel toggle and filter
-  const todayStudentLogs = studentType === "dayscholar" 
-    ? filterToday(dayScholarsLogs) 
-    : filterToday(studentLogs).filter(log => 
-        log.mode === "Hosteller" || 
-        log.mode === "Hostel" || 
-        log.mode === "hostel" || 
-        log.mode === "hosteller" ||
-        (log.role === "student" && !log.mode?.toLowerCase().includes("dayscholar"))
-      );
+  // Dayscholar Logs filter
+  const todayDayScholarLogs = filterToday(dayScholarsLogs);
+  
+  // Hosteller Logs: Outing/Home Visiting toggle and filter
+  const todayHostellerLogs = filterToday(studentLogs).filter(log => 
+    log.mode === "Hosteller" || 
+    log.mode === "Hostel" || 
+    log.mode === "hostel" || 
+    log.mode === "hosteller" ||
+    (log.role === "student" && !log.mode?.toLowerCase().includes("dayscholar"))
+  );
+  
+  // For now, we'll use the same data for outing and home visiting logs
+  // In a real implementation, you would fetch these from separate Firebase collections
+  const todayOutingLogs = todayHostellerLogs;
+  const todayHomeVisitingLogs = todayHostellerLogs;
 
   // Logout handler
   const handleLogout = () => {
@@ -683,7 +762,11 @@ export default function Management() {
     let data = [];
     if (active === "all") data = filterWeek(allLogs, "timestamp");
     else if (active === "staff") data = filterWeek(staffLogs, "timestamp");
-    else if (active === "student") data = filterWeek(studentLogs, "timestamp");
+    else if (active === "dayscholar") data = filterWeek(dayScholarsLogs, "timestamp");
+    else if (active === "hostellers") {
+      if (studentType === "outing") data = filterWeek(todayOutingLogs, "timestamp");
+      else if (studentType === "homevisiting") data = filterWeek(todayHomeVisitingLogs, "timestamp");
+    }
     else if (active === "visitors") data = filterWeek(visitorLogs, "timestamp");
     setWeeklyData(data);
     setShowWeekly(true);
@@ -776,24 +859,6 @@ export default function Management() {
         </div>
       </>
     );
-  } else if (active === "student") {
-    TableComponent = () => (
-      <>
-        <div className="text-2xl font-bold text-blue-700 mb-4 text-left">{studentType === "hostel" ? "Hostel" : "Dayscholar"}</div>
-        <SearchBar
-          search={search}
-          setSearch={setSearch}
-          date={date}
-          setDate={setDate}
-          onClear={handleClearFilters}
-          onDownloadPDF={handleDownloadPDF}
-          onWeekly={handleShowWeekly}
-        />
-        <div ref={tableRef} className="print:bg-white">
-          <StudentLogsTable logs={filterLogs(todayStudentLogs)} />
-        </div>
-      </>
-    );
   } else if (active === "staff") {
     TableComponent = () => (
       <>
@@ -825,6 +890,48 @@ export default function Management() {
         </div>
       </>
     );
+  } else if (active === "dayscholar") {
+    TableComponent = () => (
+      <>
+        <div className="text-2xl font-bold text-blue-700 mb-4 text-left">Dayscholar Logs</div>
+        <SearchBar
+          search={search}
+          setSearch={setSearch}
+          date={date}
+          setDate={setDate}
+          onClear={handleClearFilters}
+          onDownloadPDF={handleDownloadPDF}
+          onWeekly={handleShowWeekly}
+        />
+        <div ref={tableRef} className="print:bg-white">
+          <StudentLogsTable logs={filterLogs(todayDayScholarLogs)} />
+        </div>
+      </>
+    );
+  } else if (active === "hostellers") {
+    TableComponent = () => (
+      <>
+        <div className="text-2xl font-bold text-blue-700 mb-4 text-left">
+          {studentType === "outing" ? "Outing Logs" : "Home Visiting Logs"}
+        </div>
+        <SearchBar
+          search={search}
+          setSearch={setSearch}
+          date={date}
+          setDate={setDate}
+          onClear={handleClearFilters}
+          onDownloadPDF={handleDownloadPDF}
+          onWeekly={handleShowWeekly}
+        />
+        <div ref={tableRef} className="print:bg-white">
+          {studentType === "outing" ? (
+            <OutingLogsTable logs={filterLogs(todayOutingLogs)} />
+          ) : (
+            <HomeVisitingLogsTable logs={filterLogs(todayHomeVisitingLogs)} />
+          )}
+        </div>
+      </>
+    );
   } else if (active === "visitors") {
     TableComponent = () => (
       <>
@@ -853,8 +960,13 @@ export default function Management() {
           <h2 className="text-2xl font-bold text-blue-700 mb-6 text-center">Weekly Records</h2>
           <div ref={weeklyRef}>
             {active === "all" && <AllLogsTable logs={weeklyData} />}
-            {active === "student" && <StudentLogsTable logs={weeklyData} />}
             {active === "staff" && <StaffLogsTable logs={weeklyData} />}
+            {active === "dayscholar" && <StudentLogsTable logs={weeklyData} />}
+            {active === "hostellers" && (
+              studentType === "outing" ? 
+                <OutingLogsTable logs={weeklyData} /> : 
+                <HomeVisitingLogsTable logs={weeklyData} />
+            )}
             {active === "visitors" && <VisitorsTable visitors={weeklyData} />}
           </div>
           <div className="flex justify-end mt-6">

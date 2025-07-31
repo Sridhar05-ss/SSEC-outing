@@ -1,11 +1,12 @@
 import React, { useState } from "react";
+import { fakeAuth } from "../lib/fakeAuth";
 import StaffDetails from "./StaffDetails";
 import StudentDetails from "./StudentDetails";
 import StaffManagement from "./StaffManagement";
 import StudentManagement from "./StudentManagement";
 
 const departments = [
-  "CSE", "ECE", "MECH", "CIVIL", "IT", "AIML", "CYBER SECURITY", "AIDS", "EEE", "DCSE", "DECE", "DMECH"
+  "CSE", "ECE", "MECH", "CIVIL", "IT", "AIML", "CYBER SECURITY", "AIDS", "EEE", "DCSE", "DECE", "DMECH","DAUTO"
 ];
 
 type ViewType = 'staff-mgmt' | 'student-mgmt' | 'staff-details' | 'student-details';
