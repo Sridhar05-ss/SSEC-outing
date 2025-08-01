@@ -443,6 +443,28 @@ const Gate: React.FC = () => {
   // Get current attendance status
   const getCurrentAttendanceStatus = async (personId: string, role: string) => {
     try {
+      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+      
+      // Check new_attend collection first (primary source)
+      const newAttendRef = ref(db, `new_attend/${today}/${personId}`);
+      const newAttendSnapshot = await get(newAttendRef);
+      
+      if (newAttendSnapshot.exists()) {
+        const newAttendData = newAttendSnapshot.val();
+        console.log(`🔄 DEBUG: Found record in new_attend for ${personId}:`, newAttendData);
+        
+        // If there's an OUT timestamp, they're not inside
+        if (newAttendData.out && newAttendData.out !== '') {
+          return false; // They have exited
+        }
+        
+        // If there's an IN timestamp but no OUT timestamp, they're inside
+        if (newAttendData.in && newAttendData.in !== '') {
+          return true; // They are inside
+        }
+      }
+      
+      // Fallback to legacy attendance collection
       const attendanceRef = ref(db, 'attendance');
       const attendanceQuery = query(
         attendanceRef,
@@ -456,6 +478,7 @@ const Gate: React.FC = () => {
         const attendanceData = Object.values(snapshot.val())[0] as AttendanceData;
         return attendanceData.status === 'in';
       }
+      
       return false;
     } catch (error) {
       console.error('Error getting attendance status:', error);
@@ -827,12 +850,13 @@ const Gate: React.FC = () => {
             console.log(`Found ${Object.keys(students).length} students in ${dept}`);
             
             for (const [studentId, student] of Object.entries(students)) {
-              if (student.faceDescriptor) {
-                const distance = faceapi.euclideanDistance(faceDescriptor, student.faceDescriptor);
+              const studentData = student as StudentData;
+              if (studentData.faceDescriptor) {
+                const distance = faceapi.euclideanDistance(faceDescriptor, studentData.faceDescriptor);
                 if (distance < bestDistance) {
                   bestDistance = distance;
-                  bestMatch = { ...student, id: studentId, department: dept };
-                  console.log(`Found potential student match: ${student.name || student.Name} with distance ${distance}`);
+                  bestMatch = { ...studentData, id: studentId, department: dept };
+                  console.log(`Found potential student match: ${studentData.name || studentData.Name} with distance ${distance}`);
                 }
               }
             }
@@ -878,12 +902,13 @@ const Gate: React.FC = () => {
           
           // Process each chunk in parallel
           await Promise.all(chunk.map(async ([staffId, staffMember]) => {
-            if (staffMember.faceDescriptor) {
-              const distance = faceapi.euclideanDistance(faceDescriptor, staffMember.faceDescriptor);
+            const staffData = staffMember as StaffData;
+            if (staffData.faceDescriptor) {
+              const distance = faceapi.euclideanDistance(faceDescriptor, staffData.faceDescriptor);
               if (distance < bestDistance) {
                 bestDistance = distance;
-                bestMatch = { ...staffMember, id: staffId };
-                console.log(`Found potential staff match: ${staffMember.name} with distance ${distance}`);
+                bestMatch = { ...staffData, id: staffId };
+                console.log(`Found potential staff match: ${staffData.name} with distance ${distance}`);
               }
             }
           }));
@@ -920,11 +945,8 @@ const Gate: React.FC = () => {
         // Don't set error status for circular reference
         
         // Force garbage collection by nullifying references
-        if (image && image instanceof HTMLImageElement) {
-          img.onload = null;
-          img.onerror = null;
-          img.src = '';
-        }
+        // Note: img variable is defined in the scope above, no need to check for image
+        // The img variable is already defined in the performFaceRecognition function
         
         // Schedule a retry with a clean state after a short delay
         setTimeout(() => {
@@ -981,22 +1003,49 @@ const Gate: React.FC = () => {
       const accessLogRef = ref(db, `accessLogs/${accessLogData.id}`);
       await set(accessLogRef, accessLogData);
       
+      // Also save to logs collection for management tracking
+      const logsRef = ref(db, `logs/${accessLogData.id}`);
+      await set(logsRef, accessLogData);
+      
       // Save to new_attend collection for staff
       const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
       console.log(`🔄 DEBUG: Saving to new_attend collection for staff`);
       
-      // Save to new_attend collection
+      // Check if there's an existing record for this staff member today
       const collectionRef = ref(db, `new_attend/${today}/${staff.id}`);
-      const dataToSave = {
-        id: staff.id,
-        name: staff.name,
-        department: staff.department,
-        mode: staff.mode || "Staff",
-        in: direction === 'in' ? new Date().toISOString() : '',
-        out: direction === 'out' ? new Date().toISOString() : '',
-        status: direction.toUpperCase(),
-        timestamp: new Date().toISOString()
-      };
+      const existingRecordSnapshot = await get(collectionRef);
+      
+      let dataToSave;
+      
+      if (existingRecordSnapshot.exists()) {
+        // Update existing record - preserve IN timestamp, add OUT timestamp
+        const existingData = existingRecordSnapshot.val();
+        console.log(`🔄 DEBUG: Found existing record for staff ${staff.id}:`, existingData);
+        
+        dataToSave = {
+          ...existingData,
+          out: direction === 'out' ? new Date().toISOString() : existingData.out || '',
+          status: direction === 'out' ? 'EXIT' : 'Inside',
+          timestamp: new Date().toISOString()
+        };
+        
+        console.log(`🔄 DEBUG: Updating existing record with OUT timestamp:`, dataToSave);
+      } else {
+        // Create new record
+        dataToSave = {
+          id: staff.id,
+          name: staff.name,
+          department: staff.department,
+          mode: staff.mode || "Staff",
+          role: "staff",
+          in: direction === 'in' ? new Date().toISOString() : '',
+          out: direction === 'out' ? new Date().toISOString() : '',
+          status: direction === 'out' ? 'EXIT' : 'Inside',
+          timestamp: new Date().toISOString()
+        };
+        
+        console.log(`🔄 DEBUG: Creating new record:`, dataToSave);
+      }
       
       try {
         await set(collectionRef, dataToSave);
@@ -1019,7 +1068,7 @@ const Gate: React.FC = () => {
       addFaceToCooldown(staff.id);
       
       // Show success message
-      const action = direction === 'in' ? 'IN' : 'OUT';
+      const action = direction === 'in' ? 'IN' : 'EXIT';
       setMessage(`${staff.name} registered ${action}!`);
       setRecognitionResult(staff);
       setAccessLog(accessLogData);
@@ -1056,33 +1105,123 @@ const Gate: React.FC = () => {
       const isCurrentlyIn = await getCurrentAttendanceStatus(student.id, 'student');
       const direction = isCurrentlyIn ? 'out' : 'in';
       
-      // Check for outing requests if student is trying to go out
-      let outingApproved = false;
-      let outingRequestId = null;
+      // Handle different student modes
+      if (student.mode === "Hosteller") {
+        await handleHostellerAccess(student, direction);
+      } else {
+        await handleDayscholarAccess(student, direction);
+      }
+
+    } catch (error) {
+      console.error('❌ DEBUG: Student access error:', error);
+      setMessage('Error recording access. Please try again.');
+      playErrorSound();
+      setSystemStatus('error');
+    }
+  };
+
+  // Handle Hosteller student access
+  const handleHostellerAccess = async (student: RecognitionResult, direction: 'in' | 'out') => {
+    try {
+      console.log('🏠 DEBUG: Processing hosteller access for:', student.name, 'Direction:', direction);
       
+      let passApproved = false;
+      let passType = '';
+      let passRequestId = null;
+      
+      // Check pass requests if student is trying to go out
       if (direction === 'out') {
-        const outingRequestsRef = ref(db, 'outingRequests');
-        const outingQuery = query(
-          outingRequestsRef,
-          orderByChild('studentId'),
+        const passRequestsRef = ref(db, 'passRequests');
+        const passQuery = query(
+          passRequestsRef,
+          orderByChild('username'),
           equalTo(student.id)
         );
         
-        const outingSnapshot = await get(outingQuery);
-        if (outingSnapshot.exists()) {
-          const requests = outingSnapshot.val() as Record<string, OutingRequest>;
-          const approvedRequest = Object.values(requests).find((req: OutingRequest) => 
-            req.status === 'approved' && 
-            new Date(req.date) <= new Date() &&
-            new Date(req.arrivalTime) >= new Date()
+        const passSnapshot = await get(passQuery);
+        if (passSnapshot.exists()) {
+          const requests = passSnapshot.val() as Record<string, PassRequest>;
+          const today = new Date().toISOString().split('T')[0];
+          
+          // Find approved requests for today
+          const approvedRequests = Object.values(requests).filter((req: PassRequest) => 
+            req.status === 'warden_approved' && 
+            req.date === today
           );
           
-          if (approvedRequest) {
-            outingApproved = true;
-            outingRequestId = approvedRequest.id;
+          if (approvedRequests.length > 0) {
+            const approvedRequest = approvedRequests[0];
+            passApproved = true;
+            passType = approvedRequest.type;
+            passRequestId = approvedRequest.id;
+            
+            console.log(`✅ DEBUG: Found approved ${passType} request for ${student.name}`);
+          } else {
+            console.log(`❌ DEBUG: No approved pass requests found for ${student.name}`);
           }
         }
       }
+      
+      // Show appropriate message based on pass status
+      if (direction === 'out' && !passApproved) {
+        setMessage(`${student.name}, You are not allowed to go`);
+        playErrorSound();
+        setSystemStatus('error');
+        return;
+      } else if (direction === 'out' && passApproved) {
+        setMessage(`${student.name}, You are allowed to go`);
+      }
+      
+      // Get current timestamp
+      const timestamp = new Date().toISOString();
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Save to hostel_logs collection
+      const hostelLogsRef = ref(db, `hostel_logs/${today}/${student.id}`);
+      
+      // Check if there's an existing record
+      const existingRecordSnapshot = await get(hostelLogsRef);
+      
+      let dataToSave;
+      
+      if (existingRecordSnapshot.exists()) {
+        // Update existing record
+        const existingData = existingRecordSnapshot.val();
+        dataToSave = {
+          ...existingData,
+          out: direction === 'out' ? timestamp.split('T')[1].substring(0, 8) : existingData.out || '',
+          out_timestamp: direction === 'out' ? timestamp : existingData.out_timestamp || '',
+          in: direction === 'in' ? timestamp.split('T')[1].substring(0, 8) : existingData.in || '',
+          in_timestamp: direction === 'in' ? timestamp : existingData.in_timestamp || '',
+          status: direction === 'out' ? 'OUTSIDE' : 'INSIDE',
+          passType: passType,
+          passApproved: passApproved,
+          passRequestId: passRequestId,
+          timestamp: timestamp
+        };
+      } else {
+        // Create new record
+        dataToSave = {
+          id: student.id,
+          name: student.name,
+          department: student.department,
+          mode: student.mode,
+          role: "student",
+          in: direction === 'in' ? timestamp.split('T')[1].substring(0, 8) : '',
+          in_timestamp: direction === 'in' ? timestamp : '',
+          out: direction === 'out' ? timestamp.split('T')[1].substring(0, 8) : '',
+          out_timestamp: direction === 'out' ? timestamp : '',
+          status: direction === 'out' ? 'OUTSIDE' : 'INSIDE',
+          passType: passType,
+          passApproved: passApproved,
+          passRequestId: passRequestId,
+          timestamp: timestamp
+        };
+      }
+      
+      // Save to hostel_logs
+      await set(hostelLogsRef, dataToSave);
+      console.log(`✅ DEBUG: Successfully saved to hostel_logs collection`);
       
       // Create access log
       const accessLogData: AccessLog = {
@@ -1092,97 +1231,23 @@ const Gate: React.FC = () => {
         department: student.department,
         mode: student.mode,
         direction,
-        timestamp: new Date().toISOString(),
-        status: 'granted',
+        timestamp: timestamp,
+        status: passApproved ? 'granted' : 'denied',
         role: 'student',
-        outingApproved,
-        outingRequestId
+        outingApproved: passApproved,
+        outingRequestId: passRequestId
       };
       
-      // Save to database
+      // Save access log
       const accessLogRef = ref(db, `accessLogs/${accessLogData.id}`);
       await set(accessLogRef, accessLogData);
-      
-      // Determine which collection to use based on student mode
-      const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-      const collectionName = student.mode === "Hosteller" ? "outing" : "new_attend";
-      console.log(`🔄 DEBUG: Saving to ${collectionName} collection for ${student.mode} student`);
-      
-      // Get current timestamp
-      const timestamp = new Date().toISOString();
-      
-      // Save to appropriate collection based on student mode
-      const collectionRef = student.mode === "Hosteller" 
-        ? ref(db, `${collectionName}/${today}/${student.id}/current`)
-        : ref(db, `${collectionName}/${today}/${student.id}`);
-        
-      console.log(`Using database path: ${student.mode === "Hosteller" ? 
-        `${collectionName}/${today}/${student.id}/current` : 
-        `${collectionName}/${today}/${student.id}`}`);
-      
-      // Create data structure based on student mode
-      let dataToSave;
-      
-      if (student.mode === "Hosteller") {
-        // For hostellers, use the structure shown in the image
-        if (direction === 'in') {
-          dataToSave = {
-            department: student.department,
-            in: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS
-            in_time: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS
-            in_timestamp: timestamp,
-            name: student.name,
-            out_time: "",
-            out_timestamp: "",
-            username: student.id,
-            status: "IN",
-            outingApproved: outingApproved
-          };
-          
-          console.log('Saving hosteller IN data with format:', dataToSave);
-        } else {
-          // For OUT, we need to get the existing IN data first
-          const existingData = await get(collectionRef);
-          dataToSave = {
-            ...existingData.exists() ? existingData.val() : {},
-            out: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS as shown in image
-            out_time: timestamp.split('T')[1].substring(0, 8), // Format: HH:MM:SS
-            out_timestamp: timestamp,
-            status: "OUT",
-            outingApproved: outingApproved
-          };
-          
-          console.log('Updating hosteller OUT data with format:', dataToSave);
-        }
-      } else {
-        // Regular format for non-hostellers
-        dataToSave = {
-          id: student.id,
-          name: student.name,
-          department: student.department,
-          mode: student.mode,
-          in: direction === 'in' ? timestamp : '',
-          out: direction === 'out' ? timestamp : '',
-          status: direction.toUpperCase(),
-          outingApproved: outingApproved,
-          timestamp: timestamp
-        };
-      }
-      
-      try {
-        await set(collectionRef, dataToSave);
-        console.log(`✅ DEBUG: Successfully saved to ${collectionName} collection`);
-      } catch (error) {
-        console.error(`❌ DEBUG: Error saving to ${collectionName}:`, error);
-        throw error;
-      }
       
       // Update attendance (legacy)
       const attendanceRef = ref(db, `attendance/${student.id}`);
       await set(attendanceRef, {
         personId: student.id,
-        status: direction === 'in' ? 'in' : 'out',
-        timestamp: new Date().toISOString(),
+        status: direction,
+        timestamp: timestamp,
         role: 'student'
       });
       
@@ -1191,23 +1256,119 @@ const Gate: React.FC = () => {
       
       // Show success message
       const action = direction === 'in' ? 'IN' : 'OUT';
-      const outingMessage = direction === 'out' && outingApproved ? ' (Outing Approved)' : '';
-      setMessage(`${student.name} registered ${action}!${outingMessage}`);
+      const passMessage = direction === 'out' && passApproved ? ` (${passType} approved)` : '';
+      setMessage(`${student.name} registered ${action}!${passMessage}`);
       setRecognitionResult(student);
       setAccessLog(accessLogData);
       playSuccessSound();
       showWelcomeMessage(student.name);
       setSystemStatus('success');
       
-      console.log('✅ DEBUG: Student access processed successfully');
+      console.log('✅ DEBUG: Hosteller access processed successfully');
 
     } catch (error) {
-      console.error('❌ DEBUG: Student access error:', error);
+      console.error('❌ DEBUG: Hosteller access error:', error);
       setMessage('Error recording access. Please try again.');
       playErrorSound();
       setSystemStatus('error');
     }
   };
+
+  // Handle Dayscholar student access
+  const handleDayscholarAccess = async (student: RecognitionResult, direction: 'in' | 'out') => {
+    try {
+      console.log('🏠 DEBUG: Processing dayscholar access for:', student.name, 'Direction:', direction);
+      
+      // Get current timestamp
+      const timestamp = new Date().toISOString();
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Save to new_attend collection
+      const newAttendRef = ref(db, `new_attend/${today}/${student.id}`);
+      
+      // Check if there's an existing record
+      const existingRecordSnapshot = await get(newAttendRef);
+      
+      let dataToSave;
+      
+      if (existingRecordSnapshot.exists()) {
+        // Update existing record
+        const existingData = existingRecordSnapshot.val();
+        dataToSave = {
+          ...existingData,
+          out: direction === 'out' ? timestamp : existingData.out || '',
+          in: direction === 'in' ? timestamp : existingData.in || '',
+          status: direction === 'out' ? 'EXIT' : 'Inside',
+          timestamp: timestamp
+        };
+      } else {
+        // Create new record
+        dataToSave = {
+          id: student.id,
+          name: student.name,
+          department: student.department,
+          mode: student.mode,
+          role: "student",
+          in: direction === 'in' ? timestamp : '',
+          out: direction === 'out' ? timestamp : '',
+          status: direction === 'out' ? 'EXIT' : 'Inside',
+          timestamp: timestamp
+        };
+      }
+      
+      // Save to new_attend
+      await set(newAttendRef, dataToSave);
+      console.log(`✅ DEBUG: Successfully saved to new_attend collection`);
+      
+      // Create access log
+      const accessLogData: AccessLog = {
+        id: Date.now().toString(),
+        studentId: student.id,
+        name: student.name,
+        department: student.department,
+        mode: student.mode,
+        direction,
+        timestamp: timestamp,
+        status: 'granted',
+        role: 'student'
+      };
+      
+      // Save access log
+      const accessLogRef = ref(db, `accessLogs/${accessLogData.id}`);
+      await set(accessLogRef, accessLogData);
+      
+      // Update attendance (legacy)
+      const attendanceRef = ref(db, `attendance/${student.id}`);
+      await set(attendanceRef, {
+        personId: student.id,
+        status: direction,
+        timestamp: timestamp,
+        role: 'student'
+      });
+      
+      // Add to cooldown
+      addFaceToCooldown(student.id);
+      
+      // Show success message
+      const action = direction === 'in' ? 'IN' : 'EXIT';
+      setMessage(`${student.name} registered ${action}!`);
+      setRecognitionResult(student);
+      setAccessLog(accessLogData);
+      playSuccessSound();
+      showWelcomeMessage(student.name);
+      setSystemStatus('success');
+      
+      console.log('✅ DEBUG: Dayscholar access processed successfully');
+
+    } catch (error) {
+      console.error('❌ DEBUG: Dayscholar access error:', error);
+      setMessage('Error recording access. Please try again.');
+      playErrorSound();
+      setSystemStatus('error');
+    }
+  };
+      
+
 
   // Manual scan face
   const handleScanFace = async () => {
