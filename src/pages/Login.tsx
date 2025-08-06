@@ -144,17 +144,7 @@ const Login = () => {
             <DeviceStatus />
           </div>
 
-          {/* Demo Credentials Info */}
-          <div className="mt-4 p-3 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
-            <p className="text-white/80 text-xs text-center mb-2">
-              <strong>Demo Credentials (for testing):</strong>
-            </p>
-            <div className="text-white/60 text-xs space-y-1">
-              <p><strong>Admin:</strong> admin / admin123</p>
-              <p><strong>Management:</strong> manager / manager123</p>
-              <p><strong>Gate:</strong> gate / gate123</p>
-            </div>
-          </div>
+         
         </div>
       </div>
     </div>
