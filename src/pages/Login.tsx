@@ -33,63 +33,102 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-blue-50 font-poppins">
-      <div className="w-full flex flex-col items-center justify-center">
-        <div className="w-[35%] min-w-[320px] mx-auto mt-24">
-          <img src="/college_logo.png" alt="College Logo" className="w-full max-w-full mx-auto mb-4 object-contain" />
-          <div className="p-10 bg-white shadow-lg rounded-2xl text-center">
-            <h1 className="text-2xl font-semibold text-center mb-6 text-gray-800">Gate In Gate Out</h1>
-            <form className="space-y-6" onSubmit={handleSubmit} autoComplete="on">
-          <div>
-                <label htmlFor="username" className="block text-blue-700 font-semibold mb-1 text-left">Username</label>
-            <input
-              id="username"
-              name="username"
-              type="text"
-                  className="w-full border border-blue-700 rounded pl-4 pr-10 py-2 focus:outline-none focus:ring-2 focus:ring-blue-700"
-              placeholder="Enter your username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-            />
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+      <div className="absolute inset-0" 
+           style={{
+             backgroundImage: 'url(https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1944&q=80)',
+             backgroundSize: 'cover',
+             backgroundPosition: 'center',
+             backgroundRepeat: 'no-repeat',
+             filter: 'blur(5px)',
+           }}>
+      </div>
+      <div className="absolute inset-0 bg-black/30"></div>
+      <div className="w-full max-w-md mx-auto px-4 relative z-10">
+        {/* Login Card */}
+        <div className="bg-black/30 backdrop-blur-sm rounded-lg p-8 text-center">
+          {/* Logo Section */}
+          <div className="text-center mb-8">
+            <h1 className="text-5xl font-bold text-white mb-8">SSEC LOGIN</h1>
           </div>
-          <div>
-                <label htmlFor="password" className="block text-blue-700 font-semibold mb-1 text-left">Password</label>
-                <div className="relative w-full">
-            <input
-              id="password"
-              name="password"
-                    type={showPassword ? "text" : "password"}
-                    className="w-full px-4 py-2 pr-10 rounded border border-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-700"
-                    placeholder="Enter password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-                  <span
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 cursor-pointer"
-                    onClick={() => setShowPassword((v) => !v)}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                  >
-                    {showPassword ? (
-                      <i className="fa-regular fa-eye-slash"></i>
-                    ) : (
-                      <i className="fa-regular fa-eye"></i>
-                    )}
-                  </span>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Username Field */}
+            <div className="relative">
+              <div className="flex items-center bg-white/20 backdrop-blur-sm border border-white/30 rounded-md overflow-hidden">
+                <input
+                  id="username"
+                  name="username"
+                  type="text"
+                  className="w-full px-4 py-3 bg-transparent text-white placeholder-white/70 focus:outline-none"
+                  placeholder="USERNAME"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
+                  required
+                />
+                <div className="px-3">
+                  <img src="/user-icon.svg" alt="User" className="h-6 w-6 text-white" />
                 </div>
-          </div>
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-xl font-semibold transition">Login</button>
-        </form>
-        {error && <p className="text-red-600 text-center mt-4">{error}</p>}
-            <p className="text-center text-sm text-blue-700 mt-4">Demo credentials:<br/>admin/admin123, manager/manager123, gate/gate123</p>
-          </div>
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div className="relative">
+              <div className="flex items-center bg-white/20 backdrop-blur-sm border border-white/30 rounded-md overflow-hidden">
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  className="w-full px-4 py-3 bg-transparent text-white placeholder-white/70 focus:outline-none"
+                  placeholder="PASSWORD"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  className="px-3 text-white"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  <img src="/key-icon.svg" alt="Password" className="h-6 w-6 text-white" />
+                </button>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-500/50 backdrop-blur-sm border border-red-300 rounded-lg p-3">
+                <p className="text-white text-sm">{error}</p>
+              </div>
+            )}
+
+            {/* Remember me checkbox */}
+            <div className="flex items-center">
+              <input
+                id="remember-me"
+                name="remember-me"
+                type="checkbox"
+                className="h-4 w-4 text-white focus:ring-white border-white/50 rounded"
+              />
+              <label htmlFor="remember-me" className="ml-2 block text-sm text-white">
+                Remember me
+              </label>
+            </div>
+
+            {/* Login Button */}
+            <button
+              type="submit"
+              className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 px-4 rounded-md transition duration-200 transform hover:scale-[1.02] focus:outline-none"
+            >
+              SIGN IN
+            </button>
+          </form>
         </div>
       </div>
     </div>
   );
 };
 
-export default Login; 
+export default Login;

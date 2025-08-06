@@ -484,7 +484,7 @@ export default function Management() {
   const weeklyRef = useRef(null);
   
   // State for real data from Firebase
-  const [allLogs, setAllLogs] = useState<(StaffLog | StudentLog | HostelLog)[]>([]);
+  const [allLogs, setAllLogs] = useState<(StaffLog | StudentLog)[]>([]);
   const [staffLogs, setStaffLogs] = useState<StaffLog[]>([]);
   const [dayscholarLogs, setDayscholarLogs] = useState<StudentLog[]>([]);
   const [hostellerLogs, setHostellerLogs] = useState<HostelLog[]>([]);
@@ -709,8 +709,8 @@ export default function Management() {
       dayscholarLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       hostellerLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       
-      // Combine all logs for "All Logs" view
-      const allLogsCombined = [...staffLogs, ...dayscholarLogs, ...hostellerLogs];
+      // Combine all logs for "All Logs" view (excluding hosteller logs)
+      const allLogsCombined = [...staffLogs, ...dayscholarLogs];
       allLogsCombined.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       
       setAllLogs(allLogsCombined);
@@ -785,8 +785,27 @@ export default function Management() {
     );
   };
 
-  // Filter function for mixed log types (AllLogs)
-  const filterAllLogs = (logs: (StaffLog | StudentLog | HostelLog)[]) => {
+  // Filter functions for specific hosteller log types
+  const filterOutingLogs = (logs: HostelLog[]) => {
+    return logs.filter(log =>
+      log.passType === "outing" &&
+      (!search || log.id.toLowerCase().includes(search.toLowerCase()) || 
+       (log.name && log.name.toLowerCase().includes(search.toLowerCase()))) &&
+      (!date || (log.timestamp && log.timestamp.startsWith(date)))
+    );
+  };
+
+  const filterHomeVisitingLogs = (logs: HostelLog[]) => {
+    return logs.filter(log =>
+      log.passType === "home_visit" &&
+      (!search || log.id.toLowerCase().includes(search.toLowerCase()) || 
+       (log.name && log.name.toLowerCase().includes(search.toLowerCase()))) &&
+      (!date || (log.timestamp && log.timestamp.startsWith(date)))
+    );
+  };
+
+  // Filter function for mixed log types (AllLogs - staff and dayscholar only)
+  const filterAllLogs = (logs: (StaffLog | StudentLog)[]) => {
     return logs.filter(log =>
       (!search || log.id.toLowerCase().includes(search.toLowerCase()) || 
        (log.name && log.name.toLowerCase().includes(search.toLowerCase()))) &&
@@ -934,7 +953,7 @@ export default function Management() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-blue-600">All Staff Logs</p>
+                  <p className="text-sm text-blue-600">Staff & Dayscholar Logs</p>
                   <p className="text-2xl font-bold text-blue-800">{allLogs.length}</p>
                 </div>
                 <FileText className="h-8 w-8 text-blue-600" />
@@ -1061,15 +1080,30 @@ export default function Management() {
         <div className="flex flex-row gap-6 mb-6 w-full justify-center">
           <div className="bg-white rounded-xl shadow p-6 flex-1 min-w-[180px] text-center">
             <div className="text-lg font-semibold text-blue-700">Total Entries</div>
-            <div className="text-2xl font-bold mt-2">{todayHostellerLogs.filter(log => log.in && !log.out).length}</div>
+            <div className="text-2xl font-bold mt-2">
+              {studentType === "outing" 
+                ? filterOutingLogs(todayHostellerLogs).filter(log => log.in && !log.out).length
+                : filterHomeVisitingLogs(todayHostellerLogs).filter(log => log.in && !log.out).length
+              }
+            </div>
           </div>
           <div className="bg-white rounded-xl shadow p-6 flex-1 min-w-[180px] text-center">
             <div className="text-lg font-semibold text-blue-700">Total Exits</div>
-            <div className="text-2xl font-bold mt-2">{todayHostellerLogs.filter(log => log.out).length}</div>
+            <div className="text-2xl font-bold mt-2">
+              {studentType === "outing" 
+                ? filterOutingLogs(todayHostellerLogs).filter(log => log.out).length
+                : filterHomeVisitingLogs(todayHostellerLogs).filter(log => log.out).length
+              }
+            </div>
           </div>
           <div className="bg-white rounded-xl shadow p-6 flex-1 min-w-[180px] text-center">
             <div className="text-lg font-semibold text-blue-700">Currently Inside</div>
-            <div className="text-2xl font-bold mt-2">{todayHostellerLogs.filter(log => log.in && !log.out).length - todayHostellerLogs.filter(log => log.out).length}</div>
+            <div className="text-2xl font-bold mt-2">
+              {studentType === "outing" 
+                ? filterOutingLogs(todayHostellerLogs).filter(log => log.in && !log.out).length - filterOutingLogs(todayHostellerLogs).filter(log => log.out).length
+                : filterHomeVisitingLogs(todayHostellerLogs).filter(log => log.in && !log.out).length - filterHomeVisitingLogs(todayHostellerLogs).filter(log => log.out).length
+              }
+            </div>
           </div>
         </div>
         <SearchBar
@@ -1083,9 +1117,9 @@ export default function Management() {
         />
         <div ref={tableRef} className="print:bg-white">
           {studentType === "outing" ? (
-            <OutingLogsTable logs={filterHostelLogs(todayHostellerLogs)} />
+            <OutingLogsTable logs={filterOutingLogs(todayHostellerLogs)} />
           ) : (
-            <HomeVisitingLogsTable logs={filterHostelLogs(todayHostellerLogs)} />
+            <HomeVisitingLogsTable logs={filterHomeVisitingLogs(todayHostellerLogs)} />
           )}
         </div>
       </>

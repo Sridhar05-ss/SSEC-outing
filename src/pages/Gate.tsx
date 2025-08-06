@@ -53,7 +53,7 @@ interface PassRequest {
   id: string;
   username: string;
   name: string;
-  type: "outing" | "homevisit";
+  type: "outing" | "home_visit";
   status: "pending" | "hod_approved" | "warden_approved" | "approved" | "rejected";
   date: string;
   arrivalTime: string;
@@ -136,12 +136,13 @@ const Gate: React.FC = () => {
   const [recognitionResult, setRecognitionResult] = useState<RecognitionResult | null>(null);
   const [accessLog, setAccessLog] = useState<AccessLog | null>(null);
   const [lastRecognizedFace, setLastRecognizedFace] = useState<string | null>(null);
+  const [lastRecognizedPerson, setLastRecognizedPerson] = useState<{id: string, name: string, timestamp: number} | null>(null);
   const [faceDetectionCount, setFaceDetectionCount] = useState(0);
   const [autoCaptureInterval, setAutoCaptureInterval] = useState<NodeJS.Timeout | null>(null);
   
   // Cooldown tracking for face recognition
   const [faceCooldowns, setFaceCooldowns] = useState<Map<string, number>>(new Map());
-  const COOLDOWN_DURATION = 30 * 1000; // 30 seconds in milliseconds
+  const COOLDOWN_DURATION = 120 * 1000; // 2 minutes in milliseconds
   
   // Welcome message state
   const [welcomeMessage, setWelcomeMessage] = useState<string>("");
@@ -157,14 +158,19 @@ const Gate: React.FC = () => {
   const [showCameraPreview, setShowCameraPreview] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
   const [faceDetectionMessage, setFaceDetectionMessage] = useState("");
+  const [detectionProgress, setDetectionProgress] = useState(0);
 
-  // Update current time
+  // Update current time and cooldown timer
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
+      // Force re-render to update cooldown display
+      if (lastRecognizedPerson) {
+        setLastRecognizedPerson(prev => prev ? { ...prev } : null);
+      }
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [lastRecognizedPerson]);
 
   // Check camera support on mount
   useEffect(() => {
@@ -208,7 +214,7 @@ const Gate: React.FC = () => {
     }
   }, [showCameraPreview]);
 
-  // Real-time face detection
+  // Real-time face detection with improved accuracy
   const startFaceDetection = useCallback(() => {
     const getActiveVideo = () => {
       // Use full video if scanner is active, otherwise use preview video
@@ -220,7 +226,12 @@ const Gate: React.FC = () => {
       return;
     }
 
-    console.log('🔄 DEBUG: Starting face detection...');
+    console.log('🔄 DEBUG: Starting optimized face detection...');
+
+    let lastDetectionTime = 0;
+    const DETECTION_COOLDOWN = 3000; // 3 seconds between detections
+    let consecutiveDetections = 0;
+    const REQUIRED_DETECTIONS = 2; // Require 2 consecutive detections before processing
 
     const detectFaces = async () => {
       try {
@@ -236,31 +247,116 @@ const Gate: React.FC = () => {
           return;
         }
         
+        // Check if already processing
+        if (isProcessing) {
+          console.log('⏳ DEBUG: Already processing, skipping detection');
+          return;
+        }
+        
         const detections = await faceapi.detectAllFaces(activeVideo, new faceapi.TinyFaceDetectorOptions());
         
         if (detections.length > 0) {
-          console.log(`✅ DEBUG: Detected ${detections.length} face(s)`);
+          console.log(`✅ DEBUG: Detected ${detections.length} face(s) - Consecutive: ${consecutiveDetections + 1}`);
           setFaceDetected(true);
-          setFaceDetectionMessage("Scanning...");
-          setSystemStatus('scanning');
+          consecutiveDetections++;
+          
+          // Update progress
+          const progress = Math.min((consecutiveDetections / REQUIRED_DETECTIONS) * 100, 100);
+          setDetectionProgress(progress);
+          
+          if (consecutiveDetections === 1) {
+            setFaceDetectionMessage("Face detected...");
+            setSystemStatus('scanning');
+          } else if (consecutiveDetections >= REQUIRED_DETECTIONS) {
+            setFaceDetectionMessage("Capturing...");
+            setSystemStatus('processing');
+            
+            // Check cooldown before processing
+            const now = Date.now();
+            if (now - lastDetectionTime < DETECTION_COOLDOWN) {
+              console.log('⏳ DEBUG: Cooldown active, skipping capture');
+              return;
+            }
+            
+            // Process the face after required consecutive detections
+            lastDetectionTime = now;
+            consecutiveDetections = 0;
+            setDetectionProgress(0);
+            
+            // Capture and process the face
+            await captureAndProcessFace(activeVideo);
+          }
         } else {
           console.log('❌ DEBUG: No faces detected');
           setFaceDetected(false);
           setFaceDetectionMessage("No face detected");
           setSystemStatus('idle');
+          consecutiveDetections = 0; // Reset consecutive count
+          setDetectionProgress(0);
         }
       } catch (error) {
         console.error('❌ DEBUG: Face detection error:', error);
         setFaceDetected(false);
         setFaceDetectionMessage("Detection error");
+        consecutiveDetections = 0;
       }
     };
 
-    // Run face detection every 1000ms (more reliable)
-    const interval = setInterval(detectFaces, 1000);
+    // Run face detection every 800ms for better balance
+    const interval = setInterval(detectFaces, 800);
     
     return () => clearInterval(interval);
-  }, [scannerActive, modelsLoaded]);
+  }, [scannerActive, modelsLoaded, isProcessing]);
+
+  // Separate function to capture and process face
+  const captureAndProcessFace = async (videoElement: HTMLVideoElement) => {
+    try {
+      console.log('📸 DEBUG: Capturing face for processing...');
+      
+      if (!canvasRef.current) {
+        console.error('❌ DEBUG: Canvas not available for capture');
+        setMessage('Canvas not available for capture');
+        setSystemStatus('error');
+        return;
+      }
+      
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      
+      if (!context) {
+        console.error('❌ DEBUG: Canvas context not available');
+        setMessage('Canvas context not available');
+        setSystemStatus('error');
+        return;
+      }
+      
+      // Set canvas size to match video dimensions
+      const videoWidth = videoElement.videoWidth || 640;
+      const videoHeight = videoElement.videoHeight || 480;
+      
+      canvas.width = videoWidth;
+      canvas.height = videoHeight;
+      
+      console.log(`📸 DEBUG: Canvas size set to ${videoWidth}x${videoHeight}`);
+      
+      // Draw the current video frame to canvas
+      context.drawImage(videoElement, 0, 0, videoWidth, videoHeight);
+      
+      // Get the captured image data
+      const capturedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      
+      console.log('✅ DEBUG: Face captured successfully, processing...');
+      console.log('📸 DEBUG: Captured image size:', capturedDataUrl.length, 'characters');
+      
+      // Process the captured face
+      await performFaceRecognition(capturedDataUrl);
+      
+    } catch (error) {
+      console.error('❌ DEBUG: Face capture error:', error);
+      setMessage('Error capturing face. Please try again.');
+      setSystemStatus('error');
+    }
+  };
 
   // Start face detection when camera is ready
   useEffect(() => {
@@ -353,6 +449,37 @@ const Gate: React.FC = () => {
     if (!lastSeen) return 0;
     const remaining = COOLDOWN_DURATION - (Date.now() - lastSeen);
     return Math.max(0, remaining);
+  };
+
+  // Check if the same person is trying to scan again
+  const checkRepeatedScan = (personId: string, personName: string): boolean => {
+    if (lastRecognizedPerson && lastRecognizedPerson.id === personId) {
+      const timeSinceLastScan = Date.now() - lastRecognizedPerson.timestamp;
+      if (timeSinceLastScan < COOLDOWN_DURATION) {
+        const remainingSeconds = Math.ceil((COOLDOWN_DURATION - timeSinceLastScan) / 1000);
+        const remainingMinutes = Math.floor(remainingSeconds / 60);
+        const remainingSecs = remainingSeconds % 60;
+        
+        const timeMessage = remainingMinutes > 0 
+          ? `${remainingMinutes} minute${remainingMinutes > 1 ? 's' : ''} and ${remainingSecs} second${remainingSecs !== 1 ? 's' : ''}`
+          : `${remainingSecs} second${remainingSecs !== 1 ? 's' : ''}`;
+        
+        setMessage(`${personName}, please wait ${timeMessage} before scanning again.`);
+        playErrorSound();
+        setSystemStatus('error');
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Update last recognized person
+  const updateLastRecognizedPerson = (personId: string, personName: string) => {
+    setLastRecognizedPerson({
+      id: personId,
+      name: personName,
+      timestamp: Date.now()
+    });
   };
 
   // Sound effects
@@ -486,89 +613,49 @@ const Gate: React.FC = () => {
     }
   };
 
-  // Auto-capture functionality
+  // Auto-capture functionality - fallback system
   const startAutoCapture = () => {
+    console.log('🔄 DEBUG: Starting fallback auto-capture system...');
+    
+    if (autoCaptureInterval) {
+      clearInterval(autoCaptureInterval);
+      setAutoCaptureInterval(null);
+    }
+    
     const getActiveVideo = () => {
-      // Use full video if scanner is active, otherwise use preview video
       return scannerActive && fullVideoRef.current ? fullVideoRef.current : videoRef.current;
     };
     
-    if (!getActiveVideo() || !canvasRef.current || !modelsLoaded) {
-      console.log('❌ DEBUG: Cannot start auto-capture - missing requirements');
-      return;
-    }
-    
-    console.log('🔄 DEBUG: Starting auto-capture...');
-
     const interval = setInterval(async () => {
       const activeVideo = getActiveVideo();
-      if (!activeVideo || !canvasRef.current) return;
+      if (!activeVideo || !modelsLoaded || isProcessing) {
+        return;
+      }
       
       try {
-        const canvas = canvasRef.current;
-        const video = activeVideo;
-        const context = canvas.getContext('2d');
-        
-        if (!context) {
-          console.log('❌ DEBUG: No canvas context');
-          return;
-        }
-
-        // Draw video frame to canvas
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        // Detect faces for recognition
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
-          .withFaceLandmarks()
-          .withFaceDescriptors();
+        // Simple face detection check
+        const detections = await faceapi.detectAllFaces(activeVideo, new faceapi.TinyFaceDetectorOptions());
         
         if (detections.length > 0) {
-          console.log(`👤 DEBUG: Detected ${detections.length} face(s) for recognition`);
-          setFaceDetectionCount(prev => prev + 1);
+          console.log('🔄 DEBUG: Auto-capture detected face, processing...');
+          setFaceDetected(true);
+          setFaceDetectionMessage("Auto-capturing...");
+          setSystemStatus('processing');
           
-                  // Capture the frame for recognition with improved handling
-        try {
-          // Create a clean canvas to avoid circular references
-          const tempCanvas = document.createElement('canvas');
-          tempCanvas.width = canvas.width;
-          tempCanvas.height = canvas.height;
-          const tempContext = tempCanvas.getContext('2d');
-          
-          if (!tempContext) {
-            console.error('❌ DEBUG: Failed to get temporary canvas context');
-            return;
-          }
-          
-          // Draw the current frame to the temporary canvas
-          tempContext.drawImage(canvas, 0, 0);
-          const capturedDataUrl = tempCanvas.toDataURL('image/jpeg', 0.8); // Use lower quality for smaller size
-          
-          // Add a small delay to prevent rapid successive calls
-          setTimeout(async () => {
-            try {
-              // Pass the clean data URL directly to face recognition
-              await performFaceRecognition(capturedDataUrl);
-              
-              // Clean up to prevent memory leaks
-              URL.revokeObjectURL(capturedDataUrl);
-            } catch (error) {
-              console.error('❌ DEBUG: Face recognition failed in auto-capture:', error);
-              // Don't rethrow to prevent stopping the auto-capture process
-            }
-          }, 500);
-        } catch (error) {
-          console.error('❌ DEBUG: Failed to capture frame:', error);
-        }
-          } else {
-          console.log('❌ DEBUG: No faces detected for recognition');
+          // Capture and process
+          await captureAndProcessFace(activeVideo);
+        } else {
+          setFaceDetected(false);
+          setFaceDetectionMessage("No face detected");
+          setSystemStatus('idle');
         }
       } catch (error) {
         console.error('❌ DEBUG: Auto-capture error:', error);
       }
-    }, 3000); // Check every 3 seconds (more reliable)
-
+    }, 4000); // Check every 4 seconds
+    
     setAutoCaptureInterval(interval);
-    console.log('✅ DEBUG: Auto-capture started');
+    console.log('✅ DEBUG: Fallback auto-capture system activated');
   };
 
   // Camera management
@@ -972,6 +1059,11 @@ const Gate: React.FC = () => {
     try {
       console.log('👨‍💼 DEBUG: Processing staff access for:', staff.name);
       
+      // Check for repeated scan
+      if (checkRepeatedScan(staff.id, staff.name)) {
+        return;
+      }
+      
       // Check cooldown
       if (isFaceInCooldown(staff.id)) {
         const remainingTime = getRemainingCooldownTime(staff.id);
@@ -1067,6 +1159,9 @@ const Gate: React.FC = () => {
       // Add to cooldown
       addFaceToCooldown(staff.id);
       
+      // Update last recognized person
+      updateLastRecognizedPerson(staff.id, staff.name);
+      
       // Show success message
       const action = direction === 'in' ? 'IN' : 'EXIT';
       setMessage(`${staff.name} registered ${action}!`);
@@ -1090,6 +1185,11 @@ const Gate: React.FC = () => {
   const handleStudentAccess = async (student: RecognitionResult) => {
     try {
       console.log('👨‍🎓 DEBUG: Processing student access for:', student.name);
+      
+      // Check for repeated scan
+      if (checkRepeatedScan(student.id, student.name)) {
+        return;
+      }
       
       // Check cooldown
       if (isFaceInCooldown(student.id)) {
@@ -1143,11 +1243,16 @@ const Gate: React.FC = () => {
           const requests = passSnapshot.val() as Record<string, PassRequest>;
           const today = new Date().toISOString().split('T')[0];
           
-          // Find approved requests for today
+          console.log(`🔍 DEBUG: Found pass requests for ${student.name}:`, requests);
+          
+          // Find approved outing requests for today
           const approvedRequests = Object.values(requests).filter((req: PassRequest) => 
+            req.type === 'outing' && 
             req.status === 'warden_approved' && 
             req.date === today
           );
+          
+          console.log(`🔍 DEBUG: Approved outing requests for ${student.name}:`, approvedRequests);
           
           if (approvedRequests.length > 0) {
             const approvedRequest = approvedRequests[0];
@@ -1157,19 +1262,21 @@ const Gate: React.FC = () => {
             
             console.log(`✅ DEBUG: Found approved ${passType} request for ${student.name}`);
           } else {
-            console.log(`❌ DEBUG: No approved pass requests found for ${student.name}`);
+            console.log(`❌ DEBUG: No approved outing requests found for ${student.name}`);
           }
+        } else {
+          console.log(`❌ DEBUG: No pass requests found for ${student.name}`);
         }
       }
       
       // Show appropriate message based on pass status
       if (direction === 'out' && !passApproved) {
-        setMessage(`${student.name}, You are not allowed to go`);
+        setMessage(`${student.name}, You are not approved to go`);
         playErrorSound();
         setSystemStatus('error');
         return;
       } else if (direction === 'out' && passApproved) {
-        setMessage(`${student.name}, You are allowed to go`);
+        setMessage(`${student.name}, You are approved to go`);
       }
       
       // Get current timestamp
@@ -1253,6 +1360,9 @@ const Gate: React.FC = () => {
       
       // Add to cooldown
       addFaceToCooldown(student.id);
+      
+      // Update last recognized person
+      updateLastRecognizedPerson(student.id, student.name);
       
       // Show success message
       const action = direction === 'in' ? 'IN' : 'OUT';
@@ -1349,6 +1459,9 @@ const Gate: React.FC = () => {
       // Add to cooldown
       addFaceToCooldown(student.id);
       
+      // Update last recognized person
+      updateLastRecognizedPerson(student.id, student.name);
+      
       // Show success message
       const action = direction === 'in' ? 'IN' : 'EXIT';
       setMessage(`${student.name} registered ${action}!`);
@@ -1370,7 +1483,7 @@ const Gate: React.FC = () => {
       
 
 
-  // Manual scan face
+  // Manual scan face - optimized version
   const handleScanFace = async () => {
     const getActiveVideo = () => {
       // Use full video if scanner is active, otherwise use preview video
@@ -1378,28 +1491,34 @@ const Gate: React.FC = () => {
     };
 
     const activeVideo = getActiveVideo();
-    if (!activeVideo || !canvasRef.current) {
+    if (!activeVideo) {
       setMessage('Camera not available');
       return;
     }
     
+    if (isProcessing) {
+      setMessage('Already processing a face. Please wait...');
+      return;
+    }
+    
     try {
-      const canvas = canvasRef.current;
-      const video = activeVideo;
-      const context = canvas.getContext('2d');
+      console.log('📸 DEBUG: Manual scan initiated...');
+      setSystemStatus('processing');
+      setMessage('Capturing face...');
       
-      if (!context) {
-        setMessage('Canvas context not available');
+      // Check if video is ready
+      if (activeVideo.readyState < 2) {
+        setMessage('Camera not ready. Please wait...');
         return;
       }
       
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const capturedDataUrl = canvas.toDataURL('image/jpeg');
-      await performFaceRecognition(capturedDataUrl);
+      // Use the optimized capture function
+      await captureAndProcessFace(activeVideo);
       
     } catch (error) {
       console.error('Manual scan error:', error);
       setMessage('Error during manual scan');
+      setSystemStatus('error');
     }
   };
 
@@ -1580,6 +1699,34 @@ const Gate: React.FC = () => {
             </div>
             <p className="text-2xl font-bold text-gray-900 mt-2">{faceDetectionCount}</p>
           </div>
+          
+          <div className="bg-white/80 backdrop-blur-sm rounded-xl p-6 shadow-lg border border-blue-200">
+            <div className="flex items-center gap-3">
+              <Clock className="w-5 h-5 text-orange-600" />
+              <span className="font-semibold text-gray-700">Cooldown</span>
+            </div>
+            <p className="text-lg font-bold text-gray-900 mt-2">
+              {lastRecognizedPerson ? (
+                (() => {
+                  const timeSinceLastScan = Date.now() - lastRecognizedPerson.timestamp;
+                  if (timeSinceLastScan < COOLDOWN_DURATION) {
+                    const remainingSeconds = Math.ceil((COOLDOWN_DURATION - timeSinceLastScan) / 1000);
+                    const remainingMinutes = Math.floor(remainingSeconds / 60);
+                    const remainingSecs = remainingSeconds % 60;
+                    return `${remainingMinutes}:${remainingSecs.toString().padStart(2, '0')}`;
+                  }
+                  return 'Ready';
+                })()
+              ) : (
+                'Ready'
+              )}
+            </p>
+            {lastRecognizedPerson && (
+              <p className="text-xs text-gray-500 mt-1">
+                {lastRecognizedPerson.name}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Camera Preview - Always rendered but conditionally visible */}
@@ -1616,9 +1763,20 @@ const Gate: React.FC = () => {
                   <div className="text-center text-white">
                     <div className={`w-8 h-8 rounded-full mx-auto mb-2 ${faceDetected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
                     <p className="text-sm font-semibold">{faceDetectionMessage}</p>
+                    {faceDetected && detectionProgress > 0 && (
+                      <div className="mt-2">
+                        <div className="w-24 h-2 bg-gray-600 rounded-full mx-auto">
+                          <div 
+                            className="h-2 bg-green-500 rounded-full transition-all duration-300"
+                            style={{ width: `${detectionProgress}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-xs mt-1">{Math.round(detectionProgress)}%</p>
+                      </div>
+                    )}
                   </div>
-        </div>
-      )}
+                </div>
+              )}
               
               {/* Processing Overlay */}
               {isProcessing && cameraOpen && (
@@ -1672,6 +1830,39 @@ const Gate: React.FC = () => {
                 >
                   <Camera className="w-4 h-4" />
                   Test Camera
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    const getActiveVideo = () => {
+                      return scannerActive && fullVideoRef.current ? fullVideoRef.current : videoRef.current;
+                    };
+                    const activeVideo = getActiveVideo();
+                    if (activeVideo) {
+                      console.log('🔧 DEBUG: Testing face capture...');
+                      captureAndProcessFace(activeVideo);
+                    } else {
+                      setMessage('No active video found');
+                    }
+                  }}
+                  disabled={!cameraOpen}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-lg font-semibold hover:from-yellow-600 hover:to-orange-600 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                >
+                  <Eye className="w-4 h-4" />
+                  Test Capture
+                </button>
+                
+                <button 
+                  onClick={() => {
+                    setLastRecognizedPerson(null);
+                    setFaceCooldowns(new Map());
+                    setMessage('Cooldown cleared for testing');
+                    console.log('🔧 DEBUG: Cooldown cleared for testing');
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-lg font-semibold hover:from-red-600 hover:to-pink-600 transition-all duration-300 text-sm"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Clear Cooldown
                 </button>
               </div>
             </div>
@@ -1758,6 +1949,17 @@ const Gate: React.FC = () => {
                     <div className="text-center text-white">
                       <div className={`w-12 h-12 rounded-full mx-auto mb-3 ${faceDetected ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
                       <p className="text-lg font-semibold">{faceDetectionMessage}</p>
+                      {faceDetected && detectionProgress > 0 && (
+                        <div className="mt-3">
+                          <div className="w-32 h-3 bg-gray-600 rounded-full mx-auto">
+                            <div 
+                              className="h-3 bg-green-500 rounded-full transition-all duration-300"
+                              style={{ width: `${detectionProgress}%` }}
+                            ></div>
+                          </div>
+                          <p className="text-sm mt-2 font-medium">{Math.round(detectionProgress)}% Complete</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                   
