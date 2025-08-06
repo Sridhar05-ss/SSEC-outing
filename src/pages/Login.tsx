@@ -1,34 +1,42 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fakeAuth } from "../lib/fakeAuth";
-
-const demoUsers = [
-  { username: "admin", password: "admin123", role: "admin" },
-  { username: "manager", password: "manager123", role: "management" },
-  { username: "gate", password: "gate123", role: "gate" },
-];
+import { zktecoAuth } from "../lib/zktecoAuth";
+import DeviceStatus from "../components/DeviceStatus";
 
 const Login = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const user = demoUsers.find(
-      (u) => u.username === username && u.password === password
-    );
-    if (user) {
-      fakeAuth.isAuthenticated = true;
-      fakeAuth.role = user.role as 'admin' | 'management' | 'gate';
-      setError("");
-      if (user.role === "admin") navigate("/admin");
-      else if (user.role === "management") navigate("/management");
-      else if (user.role === "gate") navigate("/gate");
-    } else {
-      setError("Invalid username or password");
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const user = await zktecoAuth.authenticate(username, password);
+      
+      console.log('Authentication successful:', user);
+      
+      // Navigate based on user role
+      if (user.role === "admin") {
+        navigate("/admin");
+      } else if (user.role === "management") {
+        navigate("/management");
+      } else if (user.role === "gate") {
+        navigate("/gate");
+      } else {
+        navigate("/dashboard"); // Default fallback
+      }
+      
+    } catch (error) {
+      console.error('Authentication error:', error);
+      setError(error.message || "Authentication failed. Please check your credentials.");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -36,11 +44,11 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
       <div className="absolute inset-0" 
            style={{
-             backgroundImage: 'url(https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1944&q=80)',
+             backgroundImage: 'url(https://i.pinimg.com/1200x/06/46/06/064606d7bb91668ee0eac998d8e18139.jpg)',
              backgroundSize: 'cover',
              backgroundPosition: 'center',
              backgroundRepeat: 'no-repeat',
-             filter: 'blur(5px)',
+             filter: 'blur(4px)',
            }}>
       </div>
       <div className="absolute inset-0 bg-black/30"></div>
@@ -120,11 +128,33 @@ const Login = () => {
             {/* Login Button */}
             <button
               type="submit"
-              className="w-full bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 px-4 rounded-md transition duration-200 transform hover:scale-[1.02] focus:outline-none"
+              disabled={isLoading}
+              className={`w-full font-semibold py-3 px-4 rounded-md transition duration-200 transform hover:scale-[1.02] focus:outline-none ${
+                isLoading
+                  ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                  : 'bg-white hover:bg-gray-100 text-gray-800'
+              }`}
             >
-              SIGN IN
+              {isLoading ? 'AUTHENTICATING...' : 'SIGN IN'}
             </button>
           </form>
+
+          {/* Device Status */}
+          <div className="mt-6">
+            <DeviceStatus />
+          </div>
+
+          {/* Demo Credentials Info */}
+          <div className="mt-4 p-3 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+            <p className="text-white/80 text-xs text-center mb-2">
+              <strong>Demo Credentials (for testing):</strong>
+            </p>
+            <div className="text-white/60 text-xs space-y-1">
+              <p><strong>Admin:</strong> admin / admin123</p>
+              <p><strong>Management:</strong> manager / manager123</p>
+              <p><strong>Gate:</strong> gate / gate123</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

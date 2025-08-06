@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { fakeAuth } from "../lib/fakeAuth";
+import { zktecoAuth } from "../lib/zktecoAuth";
 import StaffDetails from "./StaffDetails";
 import StudentDetails from "./StudentDetails";
 import StaffManagement from "./StaffManagement";
@@ -26,7 +26,7 @@ const Admin: React.FC = () => {
   };
 
   const handleLogout = () => {
-    fakeAuth.logout();
+    zktecoAuth.logout();
     window.location.href = '/login';
   };
 
@@ -60,6 +60,12 @@ const Admin: React.FC = () => {
             onClick={handleStudentDetailsClick}
           >
             Student Details
+          </div>
+          <div
+            style={{ padding: '8px 0', cursor: 'pointer', background: 'transparent', borderRadius: 6, textAlign: 'left', paddingLeft: 16 }}
+            onClick={() => window.location.href = '/zkteco'}
+          >
+            ZKTeco Management
           </div>
         </div>
         {/* Only show department list for Student Details if open */}
