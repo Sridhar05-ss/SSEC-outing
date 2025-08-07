@@ -150,6 +150,7 @@ const Login = () => {
             <div className="text-white/60 text-xs space-y-1">
               <p><strong>Admin:</strong> admin / admin123</p>
               <p><strong>Management:</strong> manager / manager123</p>
+              <p><strong>Gate:</strong> gate / gate123</p>
             </div>
           </div>
         </div>
