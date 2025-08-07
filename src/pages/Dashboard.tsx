@@ -109,22 +109,22 @@ const Dashboard = () => {
         </Card>
       </div>
 
-      {/* Gate Terminal Access */}
-      <Card className="shadow-card bg-gradient-to-r from-gate-background to-gate-primary text-gate-foreground">
+      {/* Staff Management */}
+      <Card className="shadow-card bg-gradient-to-r from-blue-500 to-indigo-600 text-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Shield className="h-5 w-5" />
-            Gate Terminal Interface
+            <Users className="h-5 w-5" />
+            Staff Management
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="opacity-90">
-            Access the dedicated gate terminal interface for real-time face recognition and access control.
+            Manage staff members and their access permissions.
           </p>
-          <Link to="/gate">
-            <Button variant="gate" size="lg">
-              <Shield className="h-4 w-4" />
-              Open Gate Terminal
+          <Link to="/management">
+            <Button variant="default" size="lg">
+              <Users className="h-4 w-4" />
+              Manage Staff
             </Button>
           </Link>
         </CardContent>

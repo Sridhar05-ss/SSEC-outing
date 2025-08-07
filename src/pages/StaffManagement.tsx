@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { db } from "../lib/firebase";
 import { ref, set, remove } from "firebase/database";
+import { authenticate, addStaffMember, deleteStaffMember } from "../lib/easytimeproStaffService";
 
 const departments = [
   "CSE", "ECE", "MECH", "CIVIL", "IT", "AIML", "CYBER SECURITY", "AIDS", "EEE", "DCSE", "DECE", "DMECH"
@@ -60,35 +61,105 @@ const StaffManagement: React.FC = () => {
       alert("Please fill all fields.");
       return;
     }
+    
+    // Validate staff ID format (assuming it should be alphanumeric)
+    if (!/^[a-zA-Z0-9]+$/.test(staffId)) {
+      alert("Staff ID should contain only alphanumeric characters.");
+      return;
+    }
+    
+    // Validate name (assuming it should not be empty and not too long)
+    if (name.trim().length === 0 || name.length > 100) {
+      alert("Please enter a valid name (1-100 characters).");
+      return;
+    }
+    
     setLoading(true);
     try {
-      await set(ref(db, `Attendance_Log_staffs/${staffId}`), {
-        username: staffId,
-        name,
-        department,
-        role,
-        captureStatus: "Not Captured"
-      });
-      alert("Staff added successfully!");
+      // Authenticate with EasyTime Pro first
+      // In a real implementation, you would use actual credentials
+      // For now, we'll use dummy credentials
+      const authSuccess = await authenticate("admin", "Admin123");
+      
+      if (authSuccess) {
+        // Add staff to EasyTime Pro first
+        const staffData = {
+          name: name.trim(),
+          user_id: staffId.trim(),
+          privilege: 0, // Default privilege level
+          department,
+          role: role.trim()
+        };
+        
+        const easyTimeProSuccess = await addStaffMember(staffData);
+        
+        if (easyTimeProSuccess) {
+          // If successful, also add to Firebase
+          await set(ref(db, `Attendance_Log_staffs/${staffId}`), {
+            username: staffId.trim(),
+            name: name.trim(),
+            department,
+            role: role.trim(),
+            captureStatus: "Not Captured"
+          });
+          alert("Staff added successfully to both systems!");
+        } else {
+          alert("Failed to add staff to EasyTime Pro. Please try again.");
+        }
+      } else {
+        alert("Failed to authenticate with EasyTime Pro. Please try again.");
+      }
+      
       setName(""); setStaffId(""); setDepartment("CSE"); setRole("");
     } catch (err) {
-      alert("Failed to add staff.");
+      console.error("Failed to add staff:", err);
+      alert("Failed to add staff. Please check the console for details.");
     }
     setLoading(false);
   };
 
+  
   const handleRemoveStaff = async () => {
     if (!removeId) {
       alert("Enter Staff ID to remove.");
       return;
     }
+    
+    // Validate staff ID format (assuming it should be alphanumeric)
+    if (!/^[a-zA-Z0-9]+$/.test(removeId)) {
+      alert("Staff ID should contain only alphanumeric characters.");
+      return;
+    }
+    
+    if (!window.confirm(`Are you sure you want to remove staff member with ID: ${removeId}?`)) {
+      return;
+    }
+    
     setLoading(true);
     try {
-      await remove(ref(db, `Attendance_Log_staffs/${removeId}`));
-      alert("Staff removed successfully!");
+      // Authenticate with EasyTime Pro first
+      // In a real implementation, you would use actual credentials
+      // For now, we'll use dummy credentials
+      const authSuccess = await authenticate("admin", "Admin123");
+      
+      if (authSuccess) {
+        // Remove staff from EasyTime Pro first
+        const easyTimeProSuccess = await deleteStaffMember(removeId);
+        
+        if (easyTimeProSuccess) {
+          // If successful, also remove from Firebase
+          await remove(ref(db, `Attendance_Log_staffs/${removeId}`));
+          alert("Staff removed successfully from both systems!");
+        } else {
+          alert("Failed to remove staff from EasyTime Pro. Please try again.");
+        }
+      } else {
+        alert("Failed to authenticate with EasyTime Pro. Please try again.");
+      }
       setRemoveId("");
     } catch (err) {
-      alert("Failed to remove staff.");
+      console.error("Failed to remove staff:", err);
+      alert("Failed to remove staff. Please check the console for details.");
     }
     setLoading(false);
   };
@@ -131,7 +202,7 @@ const StaffManagement: React.FC = () => {
               </div>
             </div>
           </div>
-        )}
+        )}a
           </div>
     </div>
   );

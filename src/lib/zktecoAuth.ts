@@ -1,10 +1,24 @@
 import { zktecoAPI } from './zktecoApi';
 import { validateDemoCredentials, DemoUser } from './demoCredentials';
 
+// Helper function to convert DemoUser to ZKTecoUser
+const convertDemoUserToZKTecoUser = (demoUser: DemoUser): ZKTecoUser => {
+  // Generate a numeric ID from the user_id string
+  const id = demoUser.user_id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  
+  return {
+    id,
+    username: demoUser.username,
+    role: demoUser.role,
+    name: demoUser.name,
+    user_id: demoUser.user_id,
+    privilege: demoUser.privilege,
+  };
+};
 interface ZKTecoUser {
   id: number;
   username: string;
-  role: 'admin' | 'management' | 'gate' | 'staff';
+  role: 'admin' | 'management' | 'staff';
   name: string;
   user_id: string;
   privilege: number;
@@ -21,6 +35,30 @@ interface ZKTecoAuthState {
     isConnected: boolean;
     lastSync: string | null;
   };
+}
+
+interface ZKTecoAttendanceRecord {
+  user_id: string;
+  timestamp: string;
+  status: 'in' | 'out';
+  device_id?: string;
+}
+
+interface ZKTecoDeviceUser {
+  user_id: string;
+  name: string;
+  privilege: number;
+  password?: string;
+  group_id?: string;
+  user_rid?: string;
+  card?: number;
+}
+
+interface ZKTecoDeviceLog {
+  id: string;
+  timestamp: string;
+  operation: string;
+  details?: string;
 }
 
 // Helper functions to get/set ZKTeco auth state from localStorage
@@ -81,7 +119,7 @@ class ZKTecoAuth {
         // Update state
         this.state = {
           isAuthenticated: true,
-          user: response.user as ZKTecoUser,
+          user: response.user as unknown as ZKTecoUser,
           tokens: {
             access: response.access,
             refresh: response.refresh,
@@ -95,7 +133,7 @@ class ZKTecoAuth {
         // Save to localStorage
         setZKTecoAuthState(this.state);
 
-        return response.user as ZKTecoUser;
+        return response.user as unknown as ZKTecoUser;
       }
 
       throw new Error('Invalid response from authentication server');
@@ -108,7 +146,7 @@ class ZKTecoAuth {
           // Update state
           this.state = {
             isAuthenticated: true,
-            user: staffResponse.user as ZKTecoUser,
+            user: staffResponse.user as unknown as ZKTecoUser,
             tokens: {
               access: staffResponse.token,
               refresh: null,
@@ -122,7 +160,7 @@ class ZKTecoAuth {
           // Save to localStorage
           setZKTecoAuthState(this.state);
 
-          return staffResponse.user as ZKTecoUser;
+          return staffResponse.user as unknown as ZKTecoUser;
         }
       } catch (staffError) {
         console.error('Staff authentication also failed:', staffError);
@@ -134,7 +172,7 @@ class ZKTecoAuth {
         console.log('Using demo credentials for testing:', demoUser);
         this.state = {
           isAuthenticated: true,
-          user: demoUser as ZKTecoUser,
+          user: convertDemoUserToZKTecoUser(demoUser),
           tokens: {
             access: 'demo-token',
             refresh: null,
@@ -144,7 +182,7 @@ class ZKTecoAuth {
         
         setZKTecoAuthState(this.state);
         console.log('Auth state updated:', this.state);
-        return demoUser as ZKTecoUser;
+        return convertDemoUserToZKTecoUser(demoUser);
       }
 
       throw new Error('Authentication failed. Please check your credentials.');
@@ -208,12 +246,12 @@ class ZKTecoAuth {
   }
 
   // Get attendance data
-  async getAttendanceData(date?: string): Promise<any[]> {
+  async getAttendanceData(date?: string): Promise<ZKTecoAttendanceRecord[]> {
     return await zktecoAPI.getAttendanceData(date);
   }
 
   // Get device users
-  async getDeviceUsers(): Promise<any[]> {
+  async getDeviceUsers(): Promise<ZKTecoDeviceUser[]> {
     return await zktecoAPI.getDeviceUsers();
   }
 
@@ -236,7 +274,7 @@ class ZKTecoAuth {
   }
 
   // Get device logs
-  async getDeviceLogs(limit: number = 100): Promise<any[]> {
+  async getDeviceLogs(limit: number = 100): Promise<ZKTecoDeviceLog[]> {
     return await zktecoAPI.getDeviceLogs(limit);
   }
 
@@ -272,6 +310,6 @@ class ZKTecoAuth {
 export const zktecoAuth = new ZKTecoAuth();
 
 // Export types for use in components
-export type { ZKTecoUser, ZKTecoAuthState };
+export type { ZKTecoUser, ZKTecoAuthState, ZKTecoAttendanceRecord, ZKTecoDeviceUser, ZKTecoDeviceLog };
 
 export default ZKTecoAuth; 

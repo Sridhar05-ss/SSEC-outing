@@ -16,7 +16,6 @@ const Navigation = () => {
     { path: "/", label: "Dashboard", icon: Home },
     { path: "/staff", label: "Staff Management", icon: Users },
     { path: "/students", label: "Student Management", icon: GraduationCap },
-    { path: "/gate", label: "Gate Terminal", icon: Shield },
     { path: "/logs", label: "Access Logs", icon: FileText },
     { path: "/settings", label: "Settings", icon: Settings },
   ];

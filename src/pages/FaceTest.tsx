@@ -1,36 +1,17 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
-import { db } from "../lib/firebase";
-import { ref, get, set } from "firebase/database";
-
-// Interface for student data from Firebase
-interface Student {
-  Name?: string;
-  name?: string;
-  username?: string;
-  department?: string;
-  mode?: string;
-  faceDescriptor?: number[];
-}
-
-// Interface for staff data from Firebase
-interface Staff {
-  name?: string;
-  department?: string;
-  faceDescriptor?: number[];
-}
 
 const FaceTest: React.FC = () => {
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [cameraError, setCameraError] = useState("");
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [capturedDescriptor, setCapturedDescriptor] = useState<number[] | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectionResult, setDetectionResult] = useState<string>("");
+  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Load face-api.js models
+  // Load face-api.js models on mount
   useEffect(() => {
     const loadModels = async () => {
       try {
@@ -40,392 +21,261 @@ const FaceTest: React.FC = () => {
         await faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
         await faceapi.nets.faceRecognitionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models');
         setModelsLoaded(true);
-        console.log('All face-api.js models loaded successfully!');
+        console.log('All face-api.js models loaded.');
       } catch (err) {
+        setCameraError("Failed to load face recognition models.");
         console.error('Model loading error:', err);
-        setMessage("Failed to load face recognition models. Check console for details.");
       }
     };
     loadModels();
-  }, []);
 
-  // Handle video element when stream is available
-  useEffect(() => {
-    if (stream && videoRef.current && cameraOpen) {
-      console.log("Setting up video element with stream...");
-      videoRef.current.srcObject = stream;
-      
-      videoRef.current.onloadstart = () => console.log("Video load started");
-      videoRef.current.onloadeddata = () => console.log("Video data loaded");
-      videoRef.current.oncanplay = () => console.log("Video can play");
-      videoRef.current.onloadedmetadata = () => {
-        console.log("Video metadata loaded, starting playback...");
-        videoRef.current!.play().then(() => {
-          console.log("Video playback started");
-          setMessage("Camera started successfully!");
-        }).catch(err => {
-          console.error("Video play error:", err);
-          setMessage("Video playback failed: " + err.message);
-        });
-      };
-      
-      videoRef.current.onerror = (error) => {
-        console.error('Video error:', error);
-        setMessage("Video stream error. Please try again.");
-      };
-    }
-  }, [stream, cameraOpen]);
+    // Cleanup function
+    return () => {
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current);
+      }
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
 
   const startCamera = async () => {
-    setMessage("Starting camera...");
-    console.log("Attempting to start camera...");
-    
     try {
-      // Check if getUserMedia is supported
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("getUserMedia not supported");
-      }
-
-      // List available devices first
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
-      console.log("Available video devices:", videoDevices);
-
-      if (videoDevices.length === 0) {
-        throw new Error("No camera devices found");
-      }
-
-      // Try basic camera access first
-      console.log("Requesting camera access...");
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: true,
-        audio: false
-      });
-      
-      console.log("Camera stream obtained:", mediaStream);
-      
-      // Store the stream - useEffect will handle video setup
+      setCameraError("");
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
       setStream(mediaStream);
-      setCameraOpen(true);
-      setMessage("Camera stream obtained! Setting up video...");
-    } catch (error) {
-      console.error('Camera error:', error);
-      
-      if (error.name === 'NotAllowedError') {
-        setMessage("Camera access denied. Please allow camera permissions and refresh the page.");
-      } else if (error.name === 'NotFoundError') {
-        setMessage("No camera found. Please check your camera connection.");
-      } else if (error.name === 'NotReadableError') {
-        setMessage("Camera is in use by another application. Please close other apps using the camera.");
-      } else {
-        setMessage(`Camera error: ${error.message}. Please check permissions and try again.`);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+        videoRef.current.play();
       }
+    } catch (err) {
+      setCameraError("Camera not available or permission denied.");
+      console.error("Camera error:", err);
     }
   };
 
   const stopCamera = () => {
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+      detectionIntervalRef.current = null;
+    }
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
     }
-    setCameraOpen(false);
-    setMessage("");
+    setIsDetecting(false);
+    setDetectionResult("");
   };
 
-  const captureFace = async () => {
+  const startDetection = () => {
     if (!modelsLoaded) {
-      setMessage("Models not loaded yet. Please wait.");
+      setCameraError("Models not loaded yet. Please wait.");
       return;
     }
-
     if (!videoRef.current || !canvasRef.current) {
-      setMessage("Camera not ready.");
+      setCameraError("Video or canvas not available.");
       return;
     }
+    
+    setIsDetecting(true);
+    setDetectionResult("Detecting faces...");
+    
+    // Start detection loop
+    detectionIntervalRef.current = setInterval(detectFaces, 100);
+  };
 
-    setLoading(true);
+  const stopDetection = () => {
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current);
+      detectionIntervalRef.current = null;
+    }
+    setIsDetecting(false);
+    setDetectionResult("");
+  };
+
+  const detectFaces = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
     try {
-      const ctx = canvasRef.current.getContext('2d');
-      if (!ctx) {
-        setMessage("Canvas context not available.");
-        return;
-      }
-
-      // Capture frame from video
-      ctx.drawImage(videoRef.current, 0, 0, 640, 480);
-      const dataUrl = canvasRef.current.toDataURL('image/png');
-
-      // Detect face and extract descriptor
-      const img = await faceapi.fetchImage(dataUrl);
-      const detection = await faceapi.detectSingleFace(
-        img, 
+      const detections = await faceapi.detectAllFaces(
+        videoRef.current, 
         new faceapi.TinyFaceDetectorOptions()
-      ).withFaceLandmarks().withFaceDescriptor();
-
-      if (!detection) {
-        setMessage("No face detected. Please ensure your face is clearly visible.");
-        return;
+      ).withFaceLandmarks().withFaceDescriptors();
+      
+      // Draw detections on canvas
+      const displaySize = { width: videoRef.current.width, height: videoRef.current.height };
+      faceapi.matchDimensions(canvasRef.current, displaySize);
+      
+      const resizedDetections = faceapi.resizeResults(detections, displaySize);
+      const ctx = canvasRef.current.getContext('2d');
+      
+      if (ctx) {
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        faceapi.draw.drawDetections(canvasRef.current, resizedDetections);
+        faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections);
       }
-
-      const descriptor = Array.from(detection.descriptor);
-      setCapturedDescriptor(descriptor);
-      setMessage(`Face captured successfully! Descriptor length: ${descriptor.length}`);
       
-      console.log('Captured face descriptor:', descriptor);
-      
-    } catch (error) {
-      console.error('Face capture error:', error);
-      setMessage("Error capturing face. Check console for details.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const testRecognition = async () => {
-    if (!capturedDescriptor) {
-      setMessage("No face captured yet. Please capture a face first.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Test against stored faces
-      const studentsSnap = await get(ref(db, "students"));
-      const staffSnap = await get(ref(db, "Attendance_Log_staffs"));
-      
-      let foundMatches = 0;
-      let totalFaces = 0;
-
-      // Check students
-      if (studentsSnap.exists()) {
-        const studentsByDept = studentsSnap.val();
-        for (const [dept, students] of Object.entries(studentsByDept)) {
-          for (const [studentId, student] of Object.entries(students as Record<string, Student>)) {
-            if (student.faceDescriptor && Array.isArray(student.faceDescriptor)) {
-              totalFaces++;
-              const storedDescriptor = new Float32Array(student.faceDescriptor);
-              const distance = faceapi.euclideanDistance(
-                new Float32Array(capturedDescriptor), 
-                storedDescriptor
-              );
-              
-              if (distance < 0.6) {
-                foundMatches++;
-                console.log(`Match found: ${student.Name || student.name || "Unknown"} (Student) - Distance: ${distance}`);
-              }
-            }
-          }
-        }
+      // Update detection result
+      if (detections.length > 0) {
+        setDetectionResult(`Detected ${detections.length} face(s)`);
+      } else {
+        setDetectionResult("No faces detected");
       }
-
-      // Check staff
-      if (staffSnap.exists()) {
-        const staff = staffSnap.val();
-        for (const [staffId, staffMember] of Object.entries(staff as Record<string, Staff>)) {
-          if (staffMember.faceDescriptor && Array.isArray(staffMember.faceDescriptor)) {
-            totalFaces++;
-            const storedDescriptor = new Float32Array(staffMember.faceDescriptor);
-            const distance = faceapi.euclideanDistance(
-              new Float32Array(capturedDescriptor), 
-              storedDescriptor
-            );
-            
-            if (distance < 0.6) {
-              foundMatches++;
-              console.log(`Match found: ${staffMember.name || "Unknown"} (Staff) - Distance: ${distance}`);
-            }
-          }
-        }
-      }
-
-      setMessage(`Recognition test complete! Found ${foundMatches} matches out of ${totalFaces} stored faces. Check console for details.`);
-      
     } catch (error) {
-      console.error('Recognition test error:', error);
-      setMessage("Error testing recognition. Check console for details.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveTestFace = async () => {
-    if (!capturedDescriptor) {
-      setMessage("No face captured yet.");
-      return;
-    }
-
-    const testId = prompt("Enter a test ID for this face:");
-    if (!testId) return;
-
-    try {
-      await set(ref(db, `testFaces/${testId}`), {
-        id: testId,
-        name: `Test User ${testId}`,
-        faceDescriptor: capturedDescriptor,
-        timestamp: new Date().toISOString()
-      });
-      setMessage(`Test face saved with ID: ${testId}`);
-    } catch (error) {
-      console.error('Save error:', error);
-      setMessage("Error saving test face.");
+      console.error("Detection error:", error);
+      setDetectionResult("Detection error occurred");
     }
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
-      <h1 style={{ color: '#2563eb', marginBottom: 20 }}>Face Recognition Test</h1>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: 32 }}>
+      <h1 style={{ fontWeight: 700, color: '#1848c1', marginBottom: 24 }}>Face Recognition Test</h1>
       
-      <div style={{ marginBottom: 20 }}>
-        <h3>Status:</h3>
-        <p>Models Loaded: {modelsLoaded ? "✅ Yes" : "❌ No"}</p>
-        <p>Camera: {cameraOpen ? "✅ Active" : "❌ Inactive"}</p>
-        <p>Face Captured: {capturedDescriptor ? "✅ Yes" : "❌ No"}</p>
-        <p>Camera Stream: {stream ? "✅ Connected" : "❌ Not Connected"}</p>
-        <p>Video Ready: {videoRef.current?.readyState === 4 ? "✅ Yes" : "❌ No"}</p>
+      <div style={{ marginBottom: 24 }}>
+        <p>This page allows you to test the face recognition functionality of the application.</p>
+        <p>Click "Start Camera" to begin, then "Start Detection" to detect faces in real-time.</p>
       </div>
-
-      <div style={{ marginBottom: 20 }}>
+      
+      {/* Controls */}
+      <div style={{ marginBottom: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <button 
-          onClick={cameraOpen ? stopCamera : startCamera}
+          onClick={startCamera}
+          disabled={!!stream}
           style={{ 
-            background: cameraOpen ? '#ef4444' : '#2563eb', 
+            background: '#2563eb', 
             color: 'white', 
             border: 'none', 
+            borderRadius: 6, 
             padding: '10px 20px', 
-            borderRadius: 8, 
-            marginRight: 10,
-            cursor: 'pointer'
+            fontWeight: 500, 
+            cursor: stream ? 'not-allowed' : 'pointer',
+            opacity: stream ? 0.7 : 1
           }}
         >
-          {cameraOpen ? 'Stop Camera' : 'Start Camera'}
+          Start Camera
         </button>
         
         <button 
-          onClick={() => {
-            console.log("Manual camera test...");
-            navigator.mediaDevices.getUserMedia({video: true})
-              .then(stream => {
-                console.log("Manual test: Camera works!", stream);
-                setMessage("Manual test: Camera access successful!");
-              })
-              .catch(err => {
-                console.error("Manual test: Camera error", err);
-                setMessage(`Manual test failed: ${err.message}`);
-              });
-          }}
+          onClick={stopCamera}
+          disabled={!stream}
           style={{ 
-            background: '#f59e0b', 
+            background: '#ef4444', 
             color: 'white', 
             border: 'none', 
+            borderRadius: 6, 
             padding: '10px 20px', 
-            borderRadius: 8, 
-            marginRight: 10,
-            cursor: 'pointer'
+            fontWeight: 500, 
+            cursor: !stream ? 'not-allowed' : 'pointer',
+            opacity: !stream ? 0.7 : 1
           }}
         >
-          Test Camera
+          Stop Camera
         </button>
-
-        {cameraOpen && (
-          <button 
-            onClick={captureFace}
-            disabled={loading}
-            style={{ 
-              background: '#10b981', 
-              color: 'white', 
-              border: 'none', 
-              padding: '10px 20px', 
-              borderRadius: 8, 
-              marginRight: 10,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              opacity: loading ? 0.7 : 1
-            }}
-          >
-            {loading ? 'Capturing...' : 'Capture Face'}
-          </button>
+        
+        <button 
+          onClick={startDetection}
+          disabled={!stream || !modelsLoaded || isDetecting}
+          style={{ 
+            background: '#10b981', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: 6, 
+            padding: '10px 20px', 
+            fontWeight: 500, 
+            cursor: (!stream || !modelsLoaded || isDetecting) ? 'not-allowed' : 'pointer',
+            opacity: (!stream || !modelsLoaded || isDetecting) ? 0.7 : 1
+          }}
+        >
+          Start Detection
+        </button>
+        
+        <button 
+          onClick={stopDetection}
+          disabled={!isDetecting}
+          style={{ 
+            background: '#f97316', 
+            color: 'white', 
+            border: 'none', 
+            borderRadius: 6, 
+            padding: '10px 20px', 
+            fontWeight: 500, 
+            cursor: !isDetecting ? 'not-allowed' : 'pointer',
+            opacity: !isDetecting ? 0.7 : 1
+          }}
+        >
+          Stop Detection
+        </button>
+      </div>
+      
+      {/* Status indicators */}
+      <div style={{ marginBottom: 24 }}>
+        {!modelsLoaded && (
+          <div style={{ color: '#3b82f6', marginBottom: 8 }}>Loading face recognition models...</div>
         )}
-
-        {capturedDescriptor && (
-          <>
-            <button 
-              onClick={testRecognition}
-              disabled={loading}
-              style={{ 
-                background: '#f59e0b', 
-                color: 'white', 
-                border: 'none', 
-                padding: '10px 20px', 
-                borderRadius: 8, 
-                marginRight: 10,
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.7 : 1
-              }}
-            >
-              Test Recognition
-            </button>
-            <button 
-              onClick={saveTestFace}
-              style={{ 
-                background: '#8b5cf6', 
-                color: 'white', 
-                border: 'none', 
-                padding: '10px 20px', 
-                borderRadius: 8,
-                cursor: 'pointer'
-              }}
-            >
-              Save as Test Face
-            </button>
-          </>
+        {cameraError && (
+          <div style={{ color: '#ef4444', marginBottom: 8 }}>{cameraError}</div>
+        )}
+        {detectionResult && (
+          <div style={{ color: '#10b981', marginBottom: 8, fontWeight: 500 }}>{detectionResult}</div>
         )}
       </div>
-
-      {message && (
-        <div style={{ 
-          padding: 10, 
-          marginBottom: 20, 
-          borderRadius: 8, 
-          background: message.includes('error') || message.includes('failed') ? '#fef2f2' : '#f0fdf4',
-          color: message.includes('error') || message.includes('failed') ? '#dc2626' : '#16a34a',
-          border: `1px solid ${message.includes('error') || message.includes('failed') ? '#fecaca' : '#bbf7d0'}`
-        }}>
-          {message}
-        </div>
-      )}
-
-      {cameraOpen && (
-        <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <video 
-            ref={videoRef} 
-            width={640} 
-            height={480} 
-            autoPlay 
-            style={{ borderRadius: 8, background: '#000' }}
-          />
-          <canvas ref={canvasRef} width={640} height={480} style={{ display: 'none' }} />
-        </div>
-      )}
-
-      {capturedDescriptor && (
-        <div style={{ marginTop: 20 }}>
-          <h3>Captured Face Descriptor:</h3>
-          <p>Length: {capturedDescriptor.length} values</p>
-          <p>First 10 values: [{capturedDescriptor.slice(0, 10).join(', ')}...]</p>
-        </div>
-      )}
-
-      <div style={{ marginTop: 30, padding: 20, background: '#f8fafc', borderRadius: 8 }}>
-        <h3>Instructions:</h3>
-        <ol>
-          <li>Click "Start Camera" to begin</li>
-          <li>Position your face clearly in the camera</li>
-          <li>Click "Capture Face" to extract face descriptor</li>
-          <li>Click "Test Recognition" to compare with stored faces</li>
-          <li>Check browser console for detailed results</li>
+      
+      {/* Video and Canvas */}
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <video
+          ref={videoRef}
+          width={640}
+          height={480}
+          autoPlay
+          style={{ 
+            borderRadius: 8, 
+            background: '#000',
+            display: stream ? 'block' : 'none'
+          }}
+        />
+        <canvas
+          ref={canvasRef}
+          width={640}
+          height={480}
+          style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0,
+            display: stream && isDetecting ? 'block' : 'none'
+          }}
+        />
+        {!stream && (
+          <div style={{ 
+            width: 640, 
+            height: 480, 
+            background: '#f1f5f9', 
+            borderRadius: 8, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            border: '2px dashed #94a3b8'
+          }}>
+            <p>Camera feed will appear here</p>
+          </div>
+        )}
+      </div>
+      
+      {/* Instructions */}
+      <div style={{ marginTop: 24, padding: 16, background: '#f1f5f9', borderRadius: 8 }}>
+        <h3 style={{ fontWeight: 600, color: '#1e293b', marginBottom: 8 }}>Instructions:</h3>
+        <ol style={{ paddingLeft: 20 }}>
+          <li>Click "Start Camera" to access your webcam</li>
+          <li>Allow camera permissions when prompted by your browser</li>
+          <li>Position your face in front of the camera</li>
+          <li>Click "Start Detection" to begin face detection</li>
+          <li>Detected faces will be highlighted with bounding boxes and landmarks</li>
+          <li>Click "Stop Detection" to pause detection</li>
+          <li>Click "Stop Camera" to turn off the camera</li>
         </ol>
       </div>
     </div>
   );
 };
 
-export default FaceTest; 
+export default FaceTest;

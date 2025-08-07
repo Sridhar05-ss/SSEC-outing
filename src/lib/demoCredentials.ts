@@ -4,7 +4,7 @@
 export interface DemoUser {
   username: string;
   password: string;
-  role: 'admin' | 'management' | 'gate';
+  role: 'admin' | 'management';
   name: string;
   user_id: string;
   privilege: number;
@@ -27,14 +27,6 @@ export const demoUsers: DemoUser[] = [
     user_id: "MGR001",
     privilege: 1
   },
-  {
-    username: "gate",
-    password: "gate123",
-    role: "gate",
-    name: "Gate Operator",
-    user_id: "GATE001",
-    privilege: 0
-  }
 ];
 
 // Helper function to validate demo credentials
@@ -46,7 +38,7 @@ export const validateDemoCredentials = (username: string, password: string): Dem
 };
 
 // Get credentials for a specific role
-export const getCredentialsForRole = (role: 'admin' | 'management' | 'gate'): DemoUser | null => {
+export const getCredentialsForRole = (role: 'admin' | 'management'): DemoUser | null => {
   return demoUsers.find(u => u.role === role) || null;
 };
 

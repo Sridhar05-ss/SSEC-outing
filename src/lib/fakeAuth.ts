@@ -11,7 +11,7 @@ const getAuthState = () => {
   return { isAuthenticated: false, role: null };
 };
 
-const setAuthState = (state: { isAuthenticated: boolean; role: null | 'admin' | 'management' | 'gate' }) => {
+const setAuthState = (state: { isAuthenticated: boolean; role: null | 'admin' | 'management' }) => {
   try {
     localStorage.setItem('authState', JSON.stringify(state));
   } catch (error) {
@@ -30,7 +30,7 @@ export const fakeAuth = {
   get role() {
     return getAuthState().role;
   },
-  set role(value: null | 'admin' | 'management' | 'gate') {
+  set role(value: null | 'admin' | 'management') {
     const currentState = getAuthState();
     setAuthState({ ...currentState, role: value });
   },

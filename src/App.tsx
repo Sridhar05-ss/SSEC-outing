@@ -2,15 +2,12 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import Login from './pages/Login';
 import Admin from './pages/Admin';
 import Management from './pages/Management';
-import Gate from './pages/Gate';
-import GateTerminal from './pages/GateTerminal';
 import FaceTest from './pages/FaceTest';
-import ZKTecoManagement from './pages/ZKTecoManagement';
 import Dashboard from './pages/Dashboard';
 import { zktecoAuth } from './lib/zktecoAuth';
 import React from 'react';
 
-function RequireAuth({ children, role }: { children: JSX.Element, role: 'admin' | 'management' | 'gate' }) {
+function RequireAuth({ children, role }: { children: JSX.Element, role: 'admin' | 'management' }) {
   const location = useLocation();
   
   console.log('RequireAuth check:', {
@@ -39,9 +36,6 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/admin" element={<RequireAuth role="admin"><Admin /></RequireAuth>} />
         <Route path="/management" element={<RequireAuth role="management"><Management /></RequireAuth>} />
-        <Route path="/gate" element={<RequireAuth role="gate"><Gate /></RequireAuth>} />
-        <Route path="/gate-terminal" element={<RequireAuth role="gate"><GateTerminal /></RequireAuth>} />
-        <Route path="/zkteco" element={<RequireAuth role="admin"><ZKTecoManagement /></RequireAuth>} />
         <Route path="/dashboard" element={<RequireAuth role="admin"><Dashboard /></RequireAuth>} />
         <Route path="/face-test" element={<FaceTest />} />
         {/* Default route: redirect to login */}

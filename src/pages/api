@@ -1,0 +1,37 @@
+// src/pages/api/fetchLogs.ts (or wherever you prefer)
+
+import axios from 'axios';
+
+const baseURL = 'http://192.168.1.2:8081'; // EasyTimePro server IP
+const credentials = {
+  username: 'admin',        // change to actual
+  password: 'Admin@123'     // change to actual
+};
+
+export default async function handler(req, res) {
+  try {
+    // Step 1: Get JWT token (you can use /api-token-auth/ if JWT fails)
+    const authResponse = await axios.post(`${baseURL}/jwt-api-token-auth/`, credentials);
+
+    const accessToken = authResponse.data.access; // Save this
+    const refreshToken = authResponse.data.refresh; // Optional: save for later
+
+    // Step 2: Use token to fetch transaction logs
+    const logsResponse = await axios.get(`${baseURL}/iclock/api/transactions/`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    const logs = logsResponse.data;
+
+    // Step 3: Do something with logs
+    // You can push to Firebase, display, or return as API response
+    console.log('Fetched Logs:', logs);
+
+    res.status(200).json({ logs });
+  } catch (err) {
+    console.error('Failed:', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data || 'Internal Server Error' });
+  }
+}

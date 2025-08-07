@@ -1,6 +1,12 @@
 // ZKTeco API Integration Service
 // Based on the API documentation provided
 
+import {
+  ZKTecoAttendanceRecord,
+  ZKTecoDeviceUser,
+  ZKTecoDeviceLog
+} from './zktecoAuth';
+
 interface ZKTecoConfig {
   baseUrl: string;
   apiKey?: string;
@@ -36,7 +42,7 @@ interface ZKTecoDeviceStatus {
 class ZKTecoAPI {
   private config: ZKTecoConfig;
   private accessToken: string | null = null;
-  private refreshToken: string | null = null;
+  private _refreshToken: string | null = null;
 
   constructor(config: ZKTecoConfig) {
     this.config = {
@@ -48,13 +54,13 @@ class ZKTecoAPI {
   // Set tokens after successful authentication
   setTokens(access: string, refresh?: string) {
     this.accessToken = access;
-    if (refresh) this.refreshToken = refresh;
+    if (refresh) this._refreshToken = refresh;
   }
 
   // Clear tokens on logout
   clearTokens() {
     this.accessToken = null;
-    this.refreshToken = null;
+    this._refreshToken = null;
   }
 
   // Get authorization header
@@ -66,10 +72,10 @@ class ZKTecoAPI {
   }
 
   // Make API request with error handling
-  private async makeRequest(
+  private async makeRequest<T = unknown>(
     endpoint: string,
     options: RequestInit = {}
-  ): Promise<any> {
+  ): Promise<T> {
     const url = `${this.config.baseUrl}${endpoint}`;
     
     const defaultOptions: RequestInit = {
@@ -78,7 +84,6 @@ class ZKTecoAPI {
         ...this.getAuthHeader(),
         ...options.headers,
       },
-      timeout: this.config.timeout,
     };
 
     try {
@@ -102,7 +107,7 @@ class ZKTecoAPI {
   // Staff API Token Authentication
   async authenticateStaff(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
-      const response = await this.makeRequest('/staff-api-token-auth/', {
+      const response = await this.makeRequest<AuthResponse>('/staff-api-token-auth/', {
         method: 'POST',
         body: JSON.stringify(credentials),
       });
@@ -121,7 +126,7 @@ class ZKTecoAPI {
   // JWT API Token Authentication
   async authenticateJWT(credentials: LoginCredentials): Promise<AuthResponse> {
     try {
-      const response = await this.makeRequest('/jwt-api-token-auth/', {
+      const response = await this.makeRequest<AuthResponse>('/jwt-api-token-auth/', {
         method: 'POST',
         body: JSON.stringify(credentials),
       });
@@ -139,14 +144,14 @@ class ZKTecoAPI {
 
   // Refresh JWT Token
   async refreshToken(): Promise<AuthResponse> {
-    if (!this.refreshToken) {
+    if (!this._refreshToken) {
       throw new Error('No refresh token available');
     }
 
     try {
-      const response = await this.makeRequest('/jwt-api-token-refresh/', {
+      const response = await this.makeRequest<AuthResponse>('/jwt-api-token-refresh/', {
         method: 'POST',
-        body: JSON.stringify({ refresh: this.refreshToken }),
+        body: JSON.stringify({ refresh: this._refreshToken }),
       });
 
       if (response.access) {
@@ -164,7 +169,7 @@ class ZKTecoAPI {
   // Get device status
   async getDeviceStatus(): Promise<ZKTecoDeviceStatus> {
     try {
-      const response = await this.makeRequest('/device-status/', {
+      const response = await this.makeRequest<ZKTecoDeviceStatus>('/device-status/', {
         method: 'GET',
       });
       return response;
@@ -175,10 +180,10 @@ class ZKTecoAPI {
   }
 
   // Get attendance data
-  async getAttendanceData(date?: string): Promise<any[]> {
+  async getAttendanceData(date?: string): Promise<ZKTecoAttendanceRecord[]> {
     try {
       const params = date ? `?date=${date}` : '';
-      const response = await this.makeRequest(`/attendance/${params}`, {
+      const response = await this.makeRequest<ZKTecoAttendanceRecord[]>(`/attendance/${params}`, {
         method: 'GET',
       });
       return response;
@@ -191,7 +196,7 @@ class ZKTecoAPI {
   // Sync with device
   async syncDevice(): Promise<boolean> {
     try {
-      const response = await this.makeRequest('/sync/', {
+      const response = await this.makeRequest<{ success: boolean }>('/sync/', {
         method: 'POST',
       });
       return response.success || false;
@@ -202,9 +207,9 @@ class ZKTecoAPI {
   }
 
   // Get user list from device
-  async getDeviceUsers(): Promise<any[]> {
+  async getDeviceUsers(): Promise<ZKTecoDeviceUser[]> {
     try {
-      const response = await this.makeRequest('/users/', {
+      const response = await this.makeRequest<ZKTecoDeviceUser[]>('/users/', {
         method: 'GET',
       });
       return response;
@@ -225,7 +230,7 @@ class ZKTecoAPI {
     card?: number;
   }): Promise<boolean> {
     try {
-      const response = await this.makeRequest('/users/', {
+      const response = await this.makeRequest<{ success: boolean }>('/users/', {
         method: 'POST',
         body: JSON.stringify(userData),
       });
@@ -239,7 +244,7 @@ class ZKTecoAPI {
   // Delete user from device
   async deleteUserFromDevice(userId: string): Promise<boolean> {
     try {
-      const response = await this.makeRequest(`/users/${userId}/`, {
+      const response = await this.makeRequest<{ success: boolean }>(`/users/${userId}/`, {
         method: 'DELETE',
       });
       return response.success || false;
@@ -250,9 +255,9 @@ class ZKTecoAPI {
   }
 
   // Get device logs
-  async getDeviceLogs(limit: number = 100): Promise<any[]> {
+  async getDeviceLogs(limit: number = 100): Promise<ZKTecoDeviceLog[]> {
     try {
-      const response = await this.makeRequest(`/logs/?limit=${limit}`, {
+      const response = await this.makeRequest<ZKTecoDeviceLog[]>(`/logs/?limit=${limit}`, {
         method: 'GET',
       });
       return response;

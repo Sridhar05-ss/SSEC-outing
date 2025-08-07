@@ -61,12 +61,6 @@ const Admin: React.FC = () => {
           >
             Student Details
           </div>
-          <div
-            style={{ padding: '8px 0', cursor: 'pointer', background: 'transparent', borderRadius: 6, textAlign: 'left', paddingLeft: 16 }}
-            onClick={() => window.location.href = '/zkteco'}
-          >
-            ZKTeco Management
-          </div>
         </div>
         {/* Only show department list for Student Details if open */}
         {view === 'student-details' && studentDetailsOpen && (

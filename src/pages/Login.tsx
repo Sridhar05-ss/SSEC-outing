@@ -26,8 +26,6 @@ const Login = () => {
         navigate("/admin");
       } else if (user.role === "management") {
         navigate("/management");
-      } else if (user.role === "gate") {
-        navigate("/gate");
       } else {
         navigate("/dashboard"); // Default fallback
       }
@@ -152,7 +150,6 @@ const Login = () => {
             <div className="text-white/60 text-xs space-y-1">
               <p><strong>Admin:</strong> admin / admin123</p>
               <p><strong>Management:</strong> manager / manager123</p>
-              <p><strong>Gate:</strong> gate / gate123</p>
             </div>
           </div>
         </div>
